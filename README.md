@@ -1,6 +1,6 @@
-# TunnelView – SSH WebView for Remote Cashier Tools
+# TunnelView – Webpages with app experience
 
-TunnelView is a Android app to open the web console safely, even when the server only lives inside a VPN or LAN. It does this by establishing an SSH tunnel (via [SSHJ](https://github.com/hierynomus/sshj)), exposing the internal service on `127.0.0.1`, and presenting it inside a hardened WebView with offline snapshots, diagnostics, and an optional white‑label app builder.
+TunnelView is a SSH tunneling Webview Android app to open websites safely, even when the server only lives inside a VPN or LAN. It does this by establishing an SSH tunnel (via [SSHJ](https://github.com/hierynomus/sshj)), exposing the internal service on `127.0.0.1`, and presenting it inside a hardened WebView with offline snapshots, diagnostics, and an optional white‑label app builder.
 
 ## Highlights
 
@@ -116,6 +116,11 @@ TunnelView is a Android app to open the web console safely, even when the server
 - Sensitive defaults never live in source code: `.env` is git-ignored, PEM files under `app/src/main/res/raw` are placeholders, and runtime overrides are stored with `EncryptedSharedPreferences`.
 - Keys loaded from `.env`/assets normalize newlines before use, so you can paste PEM blocks directly into environment files when building template APKs.
 - When strict host-key mode is enabled, `SshClient` requires a SHA256 fingerprint (configurable in Settings) and aborts if it changes.
+
+## Some useful tips
+
+### Acessing app config using the top bar
+- If you fast touch screen 2 times in any part of the screen while loading page, it will show the top bar for configuring the app. If the page loads faster than you to tap screen two times, you can touch 2 times in the tiny part of the top bar that appears below device notification bar (if you aren't successful, rotate screen to landscape and try again).
 
 ## Build & Test Workflows
 
