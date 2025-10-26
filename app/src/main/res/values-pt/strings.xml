@@ -1,0 +1,206 @@
+<resources>
+    <string name="app_name">TunnelView</string>
+
+    <string name="default_ntfy_ws">https://ntfy.sh/s10e-server-ngrok/sse</string>
+    <string name="default_local_port">8090</string>
+    <string name="default_remote_host">192.168.0.7</string>
+    <string name="default_remote_port">3000</string>
+    <string name="default_ssh_user">dev</string>
+    <string name="channel_tunnel_name">Túnel SSH</string>
+    <string name="channel_tunnel_desc">Mantém o túnel SSH e informa status</string>
+
+    <string name="hint_ntfy_ws">ntfy SSE URL (ex: https://ntfy.sh/seu-topico/sse)</string>
+    <string name="hint_local_port">Porta do túnel local (ex: 8090)</string>
+    <string name="hint_remote_host">Host interno (via túnel, ex: 192.168.0.7)</string>
+    <string name="hint_remote_port">Porta interna (via túnel, ex: 3000)</string>
+    <string name="label_local_section">Acesso por conexão direta (opcional)</string>
+    <string name="hint_local_lan_host">Host conexão direta (ex: 192.168.1.3)</string>
+    <string name="hint_local_lan_port">Porta conexão direta (ex: 8080)</string>
+    <string name="hint_ssh_user">Usuário SSH (ex: appuser)</string>
+    <string name="hint_fallback_endpoint_url">(Opcional) URL de fallback com host:porta (texto ou
+        JSON)</string>
+    <string name="hint_ssh_private_key">(Opcional) Cole aqui uma chave privada PEM alternativa</string>
+    <string name="label_use_manual">Escolher host interno e porta manualmente</string>
+    <string name="label_cache_last_page">Exibir versão anterior do website quando offline</string>
+    <string name="label_persistent_notification">Mostrar notificação persistente do túnel</string>
+    <string name="label_connection_debug">Habilitar logs detalhados de conexão</string>
+    <string name="label_force_ipv4">Forçar IPv4 (ignorar IPv6)</string>
+    <string name="label_use_password">Usar senha em vez de chave</string>
+    <string name="hint_ssh_password">Senha SSH</string>
+    <string name="hint_ssh_fingerprint">Fingerprint SHA256 do host (ex.: SHA256:…)</string>
+    <string name="btn_save">Salvar</string>
+    <string name="btn_reconnect">Reconectar túnel</string>
+    <string name="saved_ok">Salvo</string>
+    <string name="hint_ssh_host">SSH Host (ex: random-id.ngrok-free.app)</string>
+    <string name="hint_ssh_port">SSH Port (ex: 22 ou porta do ngrok)</string>
+    <string name="label_ntfy_endpoint">Último endpoint (ntfy)</string>
+    <string name="label_ntfy_endpoint_placeholder">Aguardando atualização…</string>
+    <string name="waiting_dynamic_endpoint">Aguardando endpoint dinâmico…</string>
+    <string name="tunnel_waiting_network">Aguardando rede disponível…</string>
+    <string name="tunnel_status_connecting">Conectando túnel…</string>
+    <string name="tunnel_status_reconnecting">Reconectando túnel…</string>
+    <string name="tunnel_status_connected">Conectado: localhost:%1$d</string>
+    <string name="tunnel_status_local_active">Conexão local ativa</string>
+    <string name="tunnel_status_error">Erro: %1$s</string>
+    <string name="tunnel_status_error_generic">Erro desconhecido</string>
+    <string name="post_notifications_denied">Permissão de notificações negada; não foi possível
+        iniciar o serviço.</string>
+    <string name="file_chooser_error">Não foi possível abrir o seletor de arquivos.</string>
+    <string name="settings_title">Configurações</string>
+    <string name="tunnel_error_generic">Não foi possível conectar ao túnel. Verifique a conexão e
+        tente novamente.</string>
+    <string name="tunnel_error_retry">Tentar novamente</string>
+    <string name="tunnel_retry_content_description">Tentar reconectar o túnel</string>
+    <string name="tunnel_error_content_description">Alerta de falha no túnel</string>
+    <string name="tunnel_error_open_settings">Ajustes</string>
+    <string name="offline_info_button_cd">Informações de conexão offline</string>
+    <string name="offline_info_message">Não foi possível se conectar, verifique a conexão com a
+        internet!</string>
+    <string name="offline_force_reload">Forçar recarregamento</string>
+    <string name="offline_open_settings">Ajustes</string>
+    <string name="offline_info_title">Sem conexão</string>
+    <string name="ntfy_endpoint_applied">Endpoint atualizado para %1$s:%2$d</string>
+    <string name="fallback_endpoint_applied">Fallback aplicado: %1$s:%2$d</string>
+    <string name="fallback_endpoint_failed">Falha ao obter fallback: %1$s</string>
+    <string name="fallback_endpoint_generic_error">Falha ao obter fallback</string>
+    <string name="fallback_endpoint_empty">Fallback sem dados disponíveis</string>
+    <string name="settings_sections_title">Configurações</string>
+    <string name="settings_secure_section_title">Atualizações remotas</string>
+    <string name="settings_remote_updates_description">Gerencie tópicos do ntfy e fallbacks
+        automáticos.</string>
+    <string name="settings_section_ssh_title">Conexão SSH</string>
+    <string name="settings_section_ssh_description">Configure host, porta, usuário e chaves do
+        túnel.</string>
+    <string name="settings_section_network_title">Rede e host interno</string>
+    <string name="settings_section_network_description">Ajuste o host interno, a porta local e
+        configure o acesso direto.</string>
+    <string name="direct_access_button_label">Acessar por conexão direta</string>
+    <string name="direct_access_info">A página será acessada sem túnel. Caso habilitado e os campos
+        forem deixado em branco, o IP interno e porta serão implicitamente utilizados para conexão
+        direta.</string>
+    <string name="direct_access_info_title">Conexão direta</string>
+    <string name="direct_access_info_button_cd">Mais sobre a conexão direta</string>
+    <string name="settings_section_preferences_title">Preferências do app</string>
+    <string name="settings_section_preferences_description">Cache, notificações e opções adicionais.</string>
+    <string name="settings_section_builder_title">App personalizado</string>
+    <string name="settings_section_builder_description">Gere um APK de teste com outro nome e
+        pacote.</string>
+    <string name="settings_auto_save_label">Salvar automaticamente</string>
+    <string name="settings_ntfy_topic_label">Tópico ou URL do ntfy</string>
+    <string name="settings_ntfy_topic_placeholder">ex.: equipe-tunel</string>
+    <string name="settings_section_ntfy_title">Atualização via ntfy</string>
+    <string name="settings_section_ntfy_description">Receba endpoints automaticamente via ntfy.</string>
+    <string name="settings_remote_url_label">URL do arquivo de fallback</string>
+    <string name="settings_remote_url_placeholder">https://exemplo.com/endpoint.txt</string>
+    <string name="settings_remote_key_label">Chave de acesso (Bearer/Token)</string>
+    <string name="settings_remote_key_placeholder">Cole sua chave (opcional)</string>
+    <string name="settings_section_remote_file_title">Arquivo remoto (fallback)</string>
+    <string name="settings_section_remote_file_description">Baixe um arquivo host:porta quando o
+        ntfy não estiver disponível.</string>
+    <string name="settings_secure_save">Salvar credenciais</string>
+    <string name="settings_secure_saved">Credenciais atualizadas</string>
+    <string name="settings_secure_sync_now">Sincronizar agora</string>
+    <string name="settings_secure_hint">As credenciais são armazenadas com criptografia local.</string>
+
+    <string name="app_builder_title">Gerar APK personalizado</string>
+    <string name="app_builder_name_label">Nome do app</string>
+    <string name="app_builder_package_label">Nome do pacote</string>
+    <string name="app_builder_icon_label">Imagem do app (opcional)</string>
+    <string name="app_builder_select_icon">Escolher imagem</string>
+    <string name="app_builder_pick_placeholder">Nenhum arquivo selecionado</string>
+    <string name="app_builder_build">Gerar APK</string>
+    <string name="app_builder_install">Instalar APK gerado</string>
+    <string name="app_builder_status_in_progress">Gerando APK…</string>
+    <string name="app_builder_status_ready">APK pronto em Downloads: %1$s</string>
+    <string name="app_builder_status_failed">Falha ao gerar: %1$s</string>
+    <string name="app_builder_invalid_package">Nome de pacote inválido.</string>
+    <string name="app_builder_custom_signing_title">Assinar com chave própria</string>
+    <string name="app_builder_alias_label">Alias da chave</string>
+    <string name="app_builder_private_key_label">Chave privada (PEM)</string>
+    <string name="app_builder_private_key_placeholder">Cole o conteúdo completo entre -----BEGIN
+        PRIVATE KEY-----</string>
+    <string name="app_builder_certificate_label">Certificado (PEM)</string>
+    <string name="app_builder_certificate_placeholder">Cole o certificado em formato X.509 (PEM)</string>
+    <string name="app_builder_missing_signing">Forneça chave privada e certificado para assinar com
+        chave própria.</string>
+    <string name="app_builder_defaults_title">Valores padrão da conexão</string>
+    <string name="app_builder_defaults_description">Esses valores são gravados no APK gerado e
+        preenchem o formulário do túnel.</string>
+    <string name="app_builder_default_host_label">Host interno padrão</string>
+    <string name="app_builder_default_host_placeholder">ex.: 192.168.0.7</string>
+    <string name="app_builder_default_port_label">Porta interna padrão</string>
+    <string name="app_builder_default_port_placeholder">ex.: 3000</string>
+    <string name="app_builder_default_port_error">Informe um número entre 1 e 65535 ou deixe o campo
+        em branco.</string>
+    <string name="app_builder_default_ssh_user_label">Usuário SSH padrão</string>
+    <string name="app_builder_default_ssh_user_placeholder">ex.: dev</string>
+    <string name="app_builder_defaults_hint">Deixe qualquer campo vazio para distribuir o app com o
+        valor em branco.</string>
+    <string name="app_builder_default_git_repo_label">Repositório Git padrão</string>
+    <string name="app_builder_default_git_repo_placeholder">git@github.com:usuario/repositorio.git</string>
+    <string name="app_builder_default_git_file_label">Arquivo fallback padrão</string>
+    <string name="app_builder_default_git_file_placeholder">ex.: updated-proxy</string>
+    <string name="app_builder_default_ssh_key_label">Chave privada SSH padrão</string>
+    <string name="app_builder_default_ssh_key_placeholder">Cole a chave PEM utilizada pelo túnel (opcional)</string>
+    <string name="app_builder_default_git_key_label">Chave privada Git padrão</string>
+    <string name="app_builder_default_git_key_placeholder">Cole a chave PEM para acesso ao repositório (opcional)</string>
+    <string name="settings_git_section_title">Repositório Git (fallback)</string>
+    <string name="settings_section_git_description">Clone um repositório e use o arquivo configurado
+        como fallback.</string>
+    <string name="settings_git_repo_label">URL do repositório (git clone)</string>
+    <string name="settings_git_repo_placeholder">git@github.com:usuario/repositorio.git</string>
+    <string name="settings_git_branch_label">Branch</string>
+    <string name="settings_git_branch_placeholder">main</string>
+    <string name="settings_git_file_label">Arquivo no repositório</string>
+    <string name="settings_git_file_placeholder">updated-proxy</string>
+    <string name="settings_git_key_label">Chave privada SSH (PEM)</string>
+    <string name="settings_git_key_placeholder">Cole uma chave RSA/Ed25519 (opcional)</string>
+    <string name="settings_back">Voltar</string>
+    <string name="settings_endpoint_source_fallback">Fallback</string>
+    <string name="settings_endpoint_source_manual">Manual</string>
+    <string name="settings_endpoint_source_default">Padrão</string>
+    <string name="ntfy_status_listening">Aguardando atualizações do ntfy…</string>
+    <string name="ntfy_status_disabled">Atualizações do ntfy desativadas</string>
+    <string name="ntfy_status_paused">Atualizações do ntfy suspensas</string>
+    <string name="ntfy_status_missing_topic">Configure um tópico ntfy nas configurações</string>
+    <string name="ntfy_status_connecting">Conectando ao ntfy…</string>
+    <string name="ntfy_status_connected">Conectado ao ntfy</string>
+    <string name="ntfy_status_disconnected">Conexão com o ntfy perdida; tentando novamente…</string>
+    <string name="ntfy_status_retrying">Reconectando ao ntfy…</string>
+    <string name="ntfy_status_ignored">Mensagem do ntfy ignorada</string>
+    <string name="ntfy_notification_title">Atualizações do túnel</string>
+    <string name="ntfy_notification_channel">Atualizações do ntfy</string>
+    <string name="diagnostics_title">Diagnóstico de conexão</string>
+    <string name="diagnostics_test_button">Testar conexão</string>
+    <string name="diagnostics_running_test">Testando…</string>
+    <string name="diagnostics_test_success">Handshake concluído com sucesso</string>
+    <string name="diagnostics_test_failure">Falha no teste: %1$s</string>
+    <string name="diagnostics_events_title">Eventos recentes</string>
+    <string name="diagnostics_no_events">Sem eventos registrados.</string>
+    <string name="diagnostics_endpoint_label">Último endpoint: %1$s:%2$d (%3$s)</string>
+    <string name="diagnostics_endpoint_missing">Último endpoint: não disponível</string>
+    <string name="diagnostics_status">Status atual: %1$s</string>
+    <string name="diagnostics_state_connected">Conectado</string>
+    <string name="diagnostics_state_connecting">Conectando</string>
+    <string name="diagnostics_state_local_bypass">Conexão local ativa</string>
+    <string name="diagnostics_state_waiting_endpoint">Aguardando endpoint</string>
+    <string name="diagnostics_state_waiting_network">Aguardando rede</string>
+    <string name="diagnostics_state_failed">Falhou</string>
+    <string name="diagnostics_state_idle">Inativo</string>
+    <string name="diagnostics_attempts">Tentativas consecutivas: %1$d</string>
+    <string name="diagnostics_force_ipv4">Forçar IPv4: %1$s</string>
+    <string name="diagnostics_yes">Sim</string>
+    <string name="diagnostics_no">Não</string>
+    <string name="diagnostics_timeouts">Timeouts (conexão/leitura/keepalive): %1$d s / %2$d s / %3$d
+        s</string>
+    <string name="diagnostics_last_success">Último sucesso: %1$s</string>
+    <string name="diagnostics_last_failure">Última falha: %1$s</string>
+    <string name="diagnostics_last_failure_value">%1$s · %2$s · %3$s</string>
+    <string name="diagnostics_value_none">Nenhum</string>
+    <string name="settings_language_label">Idioma do aplicativo</string>
+    <string name="settings_language_description">Escolha o idioma exibido na interface.</string>
+    <string name="language_option_english">Inglês</string>
+    <string name="language_option_portuguese">Português (Brasil)</string>
+    <string name="settings_language_updated">Idioma atualizado</string>
+    <string name="dialog_close">Fechar</string>
+</resources>

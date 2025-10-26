@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_open_settings"
+        android:title="Configurações"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/action_open_ntfy"
+        android:title="Abrir ntfy.sh"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/action_open_diagnostics"
+        android:title="Diagnóstico"
+        android:showAsAction="never" />
+</menu>

@@ -1,0 +1,220 @@
+import org.gradle.process.ExecOperations
+import org.gradle.process.ExecSpec
+
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def envProperties = new Properties()
+def envFile = rootProject.file(".env")
+if (envFile.exists()) {
+    envFile.withInputStream { envProperties.load(it) }
+}
+def envValue = { key -> (envProperties.getProperty(key) ?: "").trim() }
+def quoteString = { value ->
+    def sanitized = value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+    "\"${sanitized}\""
+}
+def envFileContent = { key ->
+    def path = envValue(key)
+    if (path.isEmpty()) {
+        return "\"\""
+    }
+    def file = rootProject.file(path)
+    if (!file.exists()) {
+        logger.warn("Environment file for ${key} not found at ${path}")
+        return "\"\""
+    }
+    quoteString(file.getText("UTF-8"))
+}
+
+android {
+    namespace 'com.zahah.tunnelview'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.zahah.tunnelview"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "1.0.0"
+        vectorDrawables.useSupportLibrary = true
+        buildConfigField "String", "DEFAULT_INTERNAL_HOST", quoteString(envValue("DEFAULT_INTERNAL_HOST"))
+        buildConfigField "String", "DEFAULT_INTERNAL_PORT", quoteString(envValue("DEFAULT_INTERNAL_PORT"))
+        buildConfigField "String", "DEFAULT_SSH_USER", quoteString(envValue("DEFAULT_SSH_USER"))
+        buildConfigField "String", "DEFAULT_GIT_REPO_URL", quoteString(envValue("DEFAULT_GIT_REPO_URL"))
+        buildConfigField "String", "DEFAULT_GIT_FILE_PATH", quoteString(envValue("DEFAULT_GIT_FILE_PATH"))
+        buildConfigField "String", "DEFAULT_SSH_PRIVATE_KEY", envFileContent("DEFAULT_SSH_PRIVATE_KEY_PATH")
+        buildConfigField "String", "DEFAULT_GIT_PRIVATE_KEY", envFileContent("DEFAULT_GIT_PRIVATE_KEY_PATH")
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+        template {
+            initWith debug
+            matchingFallbacks += ['debug']
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    buildFeatures {
+        viewBinding true
+        dataBinding false
+        compose true
+        buildConfig true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion '1.5.14'
+    }
+
+    packaging {
+        resources {
+            excludes += [
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "OSGI-INF/l10n/plugin.properties",
+            ]
+        }
+    }
+
+    sourceSets {
+        debug {
+            assets.srcDir("${buildDir}/generated/baseTemplate")
+        }
+    }
+}
+
+// Directory and file references used to keep the template APK tarball in sync.
+def baseTemplateOutputDir = file("${buildDir}/generated/baseTemplate")
+def baseTemplateTarFile = new File(baseTemplateOutputDir, "base_template_apk.tar")
+def templateVariantName = "template"
+def templateApk = file("build/outputs/apk/${templateVariantName}/app-${templateVariantName}.apk")
+
+// Task responsible for copying the freshly built debug APK into the assets tarball.
+// This runs only when the APK is newer or the tarball is missing.
+tasks.register("packageBaseTemplateApk") {
+    group = "build setup"
+    description = "Packages the debug APK into base_template_apk.tar under assets."
+
+    dependsOn("assembleTemplate")
+
+    outputs.file(baseTemplateTarFile)
+
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        if (baseTemplateTarFile.exists()) {
+            baseTemplateTarFile.delete()
+        }
+        baseTemplateOutputDir.mkdirs()
+    }
+
+    doLast {
+        if (!templateApk.exists()) {
+            throw new GradleException("Template APK ${templateApk.absolutePath} not found; did assembleTemplate succeed?")
+        }
+        def execOps = project.services.get(ExecOperations)
+        execOps.exec { ExecSpec execSpec ->
+            execSpec.workingDir(templateApk.parentFile)
+            execSpec.commandLine("tar", "-cf", baseTemplateTarFile.absolutePath, templateApk.name)
+        }
+        // Align modification time with APK to avoid triggering downstream rebuilds unnecessarily.
+        baseTemplateTarFile.setLastModified(templateApk.lastModified())
+    }
+}
+
+// Ensure we package the template APK after the debug assemble has produced the APK and before assets are merged.
+afterEvaluate {
+    def mergeDebugAssetsTask = tasks.findByName("mergeDebugAssets")
+    if (mergeDebugAssetsTask != null) {
+        mergeDebugAssetsTask.dependsOn("packageBaseTemplateApk")
+    }
+}
+
+dependencies {
+    def composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    implementation composeBom
+    androidTestImplementation composeBom
+
+    // UI
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "com.google.android.material:material:1.12.0"
+    implementation "androidx.activity:activity-ktx:1.9.2"
+    implementation "androidx.activity:activity-compose:1.9.2"
+    implementation "androidx.compose.material3:material3"
+    implementation "androidx.compose.ui:ui"
+    implementation "androidx.compose.ui:ui-tooling-preview"
+    debugImplementation "androidx.compose.ui:ui-tooling"
+    debugImplementation "androidx.compose.ui:ui-test-manifest"
+
+    // HTTP stack
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation "com.squareup.okhttp3:okhttp-sse:4.12.0"
+
+    // Git (fallback fetch via clone)
+    implementation "org.eclipse.jgit:org.eclipse.jgit:6.9.0.202403050737-r"
+    implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:6.9.0.202403050737-r") {
+        exclude group: "com.jcraft", module: "jsch"
+    }
+    implementation "com.github.mwiede:jsch:0.2.15"
+    implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:6.9.0.202403050737-r")
+
+    // ✅ SSHJ without ANY transitive BouncyCastle dependencies
+    implementation("com.hierynomus:sshj:0.34.0") {
+        exclude group: "org.bouncycastle"   // <- important (removes every BC dependency that comes along)
+    }
+
+    // Additional crypto (SpongyCastle for Android)
+    implementation "com.madgag.spongycastle:prov:1.58.0.0"
+    implementation "org.bouncycastle:bcprov-jdk18on:1.76"
+    implementation "org.bouncycastle:bcpkix-jdk18on:1.76"
+    implementation "org.glassfish.external:management-api:3.2.3"
+
+    // Lifecycle
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.5"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.5"
+
+    // APK repackaging utilities
+    implementation "org.apache.commons:commons-compress:1.26.1"
+    implementation "com.android.tools.build:apksig:8.5.2"
+
+    // Coroutines
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+
+    // WorkManager
+    implementation "androidx.work:work-runtime-ktx:2.9.0"
+
+    // Security
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+    testImplementation "org.json:json:20240303"
+
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.5.1"
+    androidTestImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+
+}

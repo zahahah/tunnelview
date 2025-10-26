@@ -1,0 +1,11 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // ✅ AGP compatible with Gradle 8.10.2 and compileSdk 35
+        classpath "com.android.tools.build:gradle:8.9.0"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24"
+    }
+}

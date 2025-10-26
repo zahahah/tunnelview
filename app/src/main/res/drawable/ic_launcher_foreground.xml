@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- tunnel floor shadow -->
+    <path
+        android:fillColor="#1E1E1E"
+        android:fillAlpha="0.65"
+        android:pathData="M28,96h52l-4,-6c-6,-4 -12,-6 -22,-6s-16,2 -22,6l-4,6z"/>
+
+    <!-- outer tunnel arch -->
+    <path
+        android:fillColor="#101010"
+        android:pathData="M24,96V70a30,30 0 0,1 60,0V96Z"/>
+
+    <!-- inner walls -->
+    <path
+        android:fillColor="#2A2A2A"
+        android:pathData="M32,96V74a22,22 0 0,1 44,0V96Z"/>
+
+    <!-- warm lighting -->
+    <path
+        android:fillColor="#FFC107"
+        android:fillAlpha="0.9"
+        android:pathData="M40,96V78a14,14 0 0,1 28,0V96Z"/>
+
+    <!-- glowing core -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M50,96V82a4,4 0 0,1 8,0V96Z"/>
+
+    <!-- light reflection on the floor -->
+    <path
+        android:fillColor="#FFD54F"
+        android:fillAlpha="0.85"
+        android:pathData="M38,96h32l-2.8,-4.6C63.6,88.8 59,87.5 54,87.5s-9.6,1.3 -13.2,3.9z"/>
+</vector>
