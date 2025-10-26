@@ -13,7 +13,8 @@ data class AppDefaults(
     val gitRepoUrl: String,
     val gitFilePath: String,
     val sshPrivateKey: String,
-    val gitPrivateKey: String
+    val gitPrivateKey: String,
+    val settingsPassword: String
 )
 
 object AppDefaultsProvider {
@@ -43,7 +44,9 @@ object AppDefaultsProvider {
                         gitRepoUrl = json.optString("gitRepoUrl", base.gitRepoUrl).ifBlank { base.gitRepoUrl },
                         gitFilePath = json.optString("gitFilePath", base.gitFilePath).ifBlank { base.gitFilePath },
                         sshPrivateKey = json.optString("sshPrivateKey", base.sshPrivateKey).ifBlank { base.sshPrivateKey },
-                        gitPrivateKey = json.optString("gitPrivateKey", base.gitPrivateKey).ifBlank { base.gitPrivateKey }
+                        gitPrivateKey = json.optString("gitPrivateKey", base.gitPrivateKey).ifBlank { base.gitPrivateKey },
+                        settingsPassword = json.optString("settingsPassword", base.settingsPassword)
+                            .ifBlank { base.settingsPassword }
                     )
                 }
             }
@@ -59,7 +62,8 @@ object AppDefaultsProvider {
             gitRepoUrl = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
             gitFilePath = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),
             sshPrivateKey = decodeMultiline(BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()),
-            gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty())
+            gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()),
+            settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
         )
     }
 }

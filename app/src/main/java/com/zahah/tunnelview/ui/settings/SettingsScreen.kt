@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,6 +67,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.systemBars
 import android.provider.OpenableColumns
@@ -88,6 +92,7 @@ import kotlinx.coroutines.launch
 private enum class SettingsPage { ROOT, REMOTE_UPDATES, SSH, NETWORK, PREFERENCES, APP_BUILDER }
 
 private val PACKAGE_NAME_REGEX = Regex("^[a-zA-Z][A-Za-z0-9_]*(\\.[a-zA-Z][A-Za-z0-9_]*)+")
+private const val MIN_SETTINGS_PASSWORD_LENGTH = 4
 
 @Composable
 fun SettingsScreen(
@@ -135,6 +140,10 @@ fun SettingsScreen(
     var forceIpv4 by rememberSaveable { mutableStateOf(false) }
     var autoSaveEnabled by rememberSaveable { mutableStateOf(prefs.autoSaveSettings) }
     var appLanguage by rememberSaveable { mutableStateOf(prefs.appLanguage) }
+    var settingsPasswordEnabled by rememberSaveable { mutableStateOf(!prefs.settingsPassword.isNullOrEmpty()) }
+    var settingsPasswordInput by rememberSaveable { mutableStateOf("") }
+    var settingsPasswordConfirm by rememberSaveable { mutableStateOf("") }
+    var settingsPasswordError by remember { mutableStateOf<String?>(null) }
 
     val appBuilder = remember { TemplateAppBuilder(context) }
     var builderAppName by rememberSaveable { mutableStateOf("") }
@@ -148,6 +157,7 @@ fun SettingsScreen(
     }
     var builderDefaultSshKey by rememberSaveable { mutableStateOf(appDefaults.sshPrivateKey) }
     var builderDefaultGitKey by rememberSaveable { mutableStateOf(appDefaults.gitPrivateKey) }
+    var builderDefaultSettingsPassword by rememberSaveable { mutableStateOf(appDefaults.settingsPassword) }
     var builderResult by remember { mutableStateOf<AppBuildResult?>(null) }
     var builderStatus by remember { mutableStateOf<String?>(null) }
     var builderError by remember { mutableStateOf<String?>(null) }
@@ -231,6 +241,10 @@ fun SettingsScreen(
         forceIpv4 = prefs.forceIpv4
         autoSaveEnabled = prefs.autoSaveSettings
         appLanguage = prefs.appLanguage
+        settingsPasswordEnabled = !prefs.settingsPassword.isNullOrEmpty()
+        settingsPasswordInput = ""
+        settingsPasswordConfirm = ""
+        settingsPasswordError = null
     }
 
     LaunchedEffect(lastEndpoint, lastEndpointSource) {
@@ -250,6 +264,40 @@ fun SettingsScreen(
     }
 
     fun triggerSave(showMessage: Boolean) {
+        val trimmedPassword = settingsPasswordInput.trim()
+        val trimmedPasswordConfirm = settingsPasswordConfirm.trim()
+        val passwordRequired = settingsPasswordEnabled
+        val existingPassword = prefs.settingsPassword.orEmpty()
+        val passwordToPersist = when {
+            !passwordRequired -> ""
+            trimmedPassword.isNotEmpty() || trimmedPasswordConfirm.isNotEmpty() -> {
+                if (trimmedPassword.length < MIN_SETTINGS_PASSWORD_LENGTH) {
+                    val error = context.getString(
+                        R.string.settings_password_error_length,
+                        MIN_SETTINGS_PASSWORD_LENGTH
+                    )
+                    settingsPasswordError = error
+                    message = error
+                    return
+                }
+                if (trimmedPassword != trimmedPasswordConfirm) {
+                    val error = context.getString(R.string.settings_password_error_mismatch)
+                    settingsPasswordError = error
+                    message = error
+                    return
+                }
+                trimmedPassword
+            }
+            existingPassword.isNotEmpty() -> existingPassword
+            else -> {
+                val error = context.getString(R.string.settings_password_error_required)
+                settingsPasswordError = error
+                message = error
+                return
+            }
+        }
+        settingsPasswordError = null
+
         scope.launch {
             saving = true
             runCatching {
@@ -316,7 +364,12 @@ fun SettingsScreen(
                 prefs.forceIpv4 = forceIpv4
                 prefs.autoSaveSettings = autoSaveEnabled
                 prefs.appLanguage = appLanguage
+                prefs.settingsPassword = if (passwordRequired) passwordToPersist else ""
             }.onSuccess {
+                if (!passwordRequired || trimmedPassword.isNotEmpty()) {
+                    settingsPasswordInput = ""
+                    settingsPasswordConfirm = ""
+                }
                 if (showMessage) {
                     message = context.getString(R.string.settings_secure_saved)
                 }
@@ -335,6 +388,7 @@ fun SettingsScreen(
         val trimmedDefaultGitFile = builderDefaultGitFile.trim()
         val trimmedDefaultSshKey = builderDefaultSshKey.trim()
         val trimmedDefaultGitKey = builderDefaultGitKey.trim()
+        val trimmedDefaultSettingsPassword = builderDefaultSettingsPassword.trim()
         if (!PACKAGE_NAME_REGEX.matches(trimmedPackage)) {
             builderError = context.getString(R.string.app_builder_invalid_package)
             builderStatus = null
@@ -366,6 +420,7 @@ fun SettingsScreen(
         builderDefaultGitFile = trimmedDefaultGitFile
         builderDefaultSshKey = trimmedDefaultSshKey
         builderDefaultGitKey = trimmedDefaultGitKey
+        builderDefaultSettingsPassword = trimmedDefaultSettingsPassword
         builderError = null
         builderStatus = context.getString(R.string.app_builder_status_in_progress)
         builderResult = null
@@ -384,6 +439,7 @@ fun SettingsScreen(
                         defaultGitFilePath = trimmedDefaultGitFile,
                         defaultSshPrivateKey = trimmedDefaultSshKey,
                         defaultGitPrivateKey = trimmedDefaultGitKey,
+                        defaultSettingsPassword = trimmedDefaultSettingsPassword,
                         iconBytes = builderIconBytes,
                         iconMimeType = builderIconMime,
                         customSigning = if (builderUseCustomSigning) {
@@ -525,6 +581,10 @@ fun SettingsScreen(
             forceIpv4 = forceIpv4,
             autoSaveEnabled = autoSaveEnabled,
             languageCode = appLanguage,
+            settingsPasswordEnabled = settingsPasswordEnabled,
+            settingsPasswordInput = settingsPasswordInput,
+            settingsPasswordConfirm = settingsPasswordConfirm,
+            settingsPasswordError = settingsPasswordError,
             onBack = {
                 if (autoSaveEnabled) triggerSave(showMessage = false)
                 currentPage = SettingsPage.ROOT.name
@@ -537,6 +597,22 @@ fun SettingsScreen(
                 autoSaveEnabled = enabled
                 prefs.autoSaveSettings = enabled
                 if (enabled) triggerSave(showMessage = false)
+            },
+            onSettingsPasswordEnabledChange = { enabled ->
+                settingsPasswordEnabled = enabled
+                settingsPasswordError = null
+                if (!enabled) {
+                    settingsPasswordInput = ""
+                    settingsPasswordConfirm = ""
+                }
+            },
+            onSettingsPasswordInputChange = {
+                settingsPasswordInput = it
+                settingsPasswordError = null
+            },
+            onSettingsPasswordConfirmChange = {
+                settingsPasswordConfirm = it
+                settingsPasswordError = null
             },
             onLanguageChange = { code ->
                 if (appLanguage != code) {
@@ -567,6 +643,7 @@ fun SettingsScreen(
             defaultPortError = builderPortError,
             defaultSshKey = builderDefaultSshKey,
             defaultGitKey = builderDefaultGitKey,
+            defaultSettingsPassword = builderDefaultSettingsPassword,
             onBack = {
                 if (!builderBusy) {
                     currentPage = SettingsPage.ROOT.name
@@ -584,6 +661,7 @@ fun SettingsScreen(
             onDefaultGitFileChange = { builderDefaultGitFile = it },
             onDefaultSshKeyChange = { builderDefaultSshKey = it },
             onDefaultGitKeyChange = { builderDefaultGitKey = it },
+            onDefaultSettingsPasswordChange = { builderDefaultSettingsPassword = it },
             onPickIcon = { iconPickerLauncher.launch("image/*") },
             onToggleCustomSigning = { builderUseCustomSigning = it },
             signingAlias = builderSigningAlias,
@@ -1144,12 +1222,19 @@ private fun PreferencesPage(
     forceIpv4: Boolean,
     autoSaveEnabled: Boolean,
     languageCode: String,
+    settingsPasswordEnabled: Boolean,
+    settingsPasswordInput: String,
+    settingsPasswordConfirm: String,
+    settingsPasswordError: String?,
     onBack: () -> Unit,
     onCacheChange: (Boolean) -> Unit,
     onPersistentNotificationChange: (Boolean) -> Unit,
     onConnectionDebugChange: (Boolean) -> Unit,
     onForceIpv4Change: (Boolean) -> Unit,
     onAutoSaveChange: (Boolean) -> Unit,
+    onSettingsPasswordEnabledChange: (Boolean) -> Unit,
+    onSettingsPasswordInputChange: (String) -> Unit,
+    onSettingsPasswordConfirmChange: (String) -> Unit,
     onLanguageChange: (String) -> Unit,
     onTestReconnect: () -> Unit,
 ) {
@@ -1206,6 +1291,15 @@ private fun PreferencesPage(
                     checked = autoSaveEnabled,
                     onCheckedChange = onAutoSaveChange
                 )
+                SettingsPasswordSection(
+                    enabled = settingsPasswordEnabled,
+                    password = settingsPasswordInput,
+                    confirmPassword = settingsPasswordConfirm,
+                    errorMessage = settingsPasswordError,
+                    onEnabledChange = onSettingsPasswordEnabledChange,
+                    onPasswordChange = onSettingsPasswordInputChange,
+                    onConfirmPasswordChange = onSettingsPasswordConfirmChange
+                )
                 PreferenceSwitchRow(
                     title = stringResource(id = R.string.label_cache_last_page),
                     checked = cacheLastPage,
@@ -1238,6 +1332,107 @@ private fun PreferencesPage(
 }
 
 @Composable
+private fun SettingsPasswordSection(
+    enabled: Boolean,
+    password: String,
+    confirmPassword: String,
+    errorMessage: String?,
+    onEnabledChange: (Boolean) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onConfirmPasswordChange: (String) -> Unit,
+) {
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var confirmVisible by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_password_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = stringResource(id = R.string.settings_password_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+        AnimatedVisibility(visible = enabled) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PasswordOutlinedField(
+                    value = password,
+                    onValueChange = onPasswordChange,
+                    label = stringResource(id = R.string.settings_password_new_label),
+                    visible = passwordVisible,
+                    onToggleVisibility = { passwordVisible = !passwordVisible }
+                )
+                PasswordOutlinedField(
+                    value = confirmPassword,
+                    onValueChange = onConfirmPasswordChange,
+                    label = stringResource(id = R.string.settings_password_confirm_label),
+                    visible = confirmVisible,
+                    onToggleVisibility = { confirmVisible = !confirmVisible }
+                )
+                Text(
+                    text = errorMessage
+                        ?: stringResource(id = R.string.settings_password_hint, MIN_SETTINGS_PASSWORD_LENGTH),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (errorMessage != null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordOutlinedField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    visible: Boolean,
+    onToggleVisibility: () -> Unit,
+) {
+    OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(text = label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = onToggleVisibility) {
+                Icon(
+                    imageVector = if (visible) {
+                        Icons.Filled.VisibilityOff
+                    } else {
+                        Icons.Filled.Visibility
+                    },
+                    contentDescription = stringResource(id = R.string.settings_password_toggle_visibility)
+                )
+            }
+        }
+    )
+}
+
+@Composable
 private fun AppBuilderPage(
     modifier: Modifier,
     appName: String,
@@ -1257,6 +1452,7 @@ private fun AppBuilderPage(
     defaultPortError: String?,
     defaultSshKey: String,
     defaultGitKey: String,
+    defaultSettingsPassword: String,
     onBack: () -> Unit,
     onAppNameChange: (String) -> Unit,
     onPackageChange: (String) -> Unit,
@@ -1267,6 +1463,7 @@ private fun AppBuilderPage(
     onDefaultGitFileChange: (String) -> Unit,
     onDefaultSshKeyChange: (String) -> Unit,
     onDefaultGitKeyChange: (String) -> Unit,
+    onDefaultSettingsPasswordChange: (String) -> Unit,
     onPickIcon: () -> Unit,
     onToggleCustomSigning: (Boolean) -> Unit,
     signingAlias: String,
@@ -1416,6 +1613,16 @@ private fun AppBuilderPage(
                 placeholder = { Text(text = stringResource(id = R.string.app_builder_default_git_key_placeholder)) },
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultSettingsPassword,
+                onValueChange = onDefaultSettingsPasswordChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_settings_password_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_settings_password_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
             Text(
                 text = stringResource(id = R.string.app_builder_defaults_hint),

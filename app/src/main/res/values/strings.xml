@@ -24,6 +24,15 @@
     <string name="label_persistent_notification">Show persistent tunnel notification</string>
     <string name="label_connection_debug">Enable verbose connection logs</string>
     <string name="label_force_ipv4">Force IPv4 (ignore IPv6)</string>
+    <string name="settings_password_title">Lock settings with a password</string>
+    <string name="settings_password_description">Require a password before anyone can open this screen.</string>
+    <string name="settings_password_new_label">New password</string>
+    <string name="settings_password_confirm_label">Confirm password</string>
+    <string name="settings_password_hint">Password must be at least %1$d characters.</string>
+    <string name="settings_password_toggle_visibility">Toggle password visibility</string>
+    <string name="settings_password_error_length">Password must be at least %1$d characters.</string>
+    <string name="settings_password_error_mismatch">Passwords do not match.</string>
+    <string name="settings_password_error_required">Enter and confirm a password to enable the lock.</string>
     <string name="label_use_password">Use password instead of key</string>
     <string name="hint_ssh_password">SSH password</string>
     <string name="hint_ssh_fingerprint">Host SHA256 fingerprint (e.g. SHA256:…)</string>
@@ -140,6 +149,8 @@
     <string name="app_builder_default_ssh_key_placeholder">Paste PEM key used for the tunnel (optional)</string>
     <string name="app_builder_default_git_key_label">Default Git SSH private key</string>
     <string name="app_builder_default_git_key_placeholder">Paste PEM key for repository access (optional)</string>
+    <string name="app_builder_default_settings_password_label">Default settings password</string>
+    <string name="app_builder_default_settings_password_placeholder">Leave blank to disable</string>
     <string name="settings_git_section_title">Git repository (fallback)</string>
     <string name="settings_section_git_description">Clone a repository and use the configured file
         as fallback.</string>
@@ -197,5 +208,11 @@
     <string name="language_option_english">English</string>
     <string name="language_option_portuguese">Portuguese (Brazil)</string>
     <string name="settings_language_updated">Language updated</string>
+    <string name="settings_password_gate_title">Settings locked</string>
+    <string name="settings_password_gate_description">Enter the settings password to continue.</string>
+    <string name="settings_password_gate_placeholder">Password</string>
+    <string name="settings_password_gate_unlock">Unlock</string>
+    <string name="settings_password_gate_cancel">Close</string>
+    <string name="settings_password_gate_error">Incorrect password. Try again.</string>
     <string name="dialog_close">Close</string>
 </resources>

@@ -308,6 +308,20 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean(KEY_FORCE_IPV4, false)
         set(value) = sp.edit { putBoolean(KEY_FORCE_IPV4, value) }
 
+    var settingsPassword: String?
+        get() = if (sp.contains(PrefKeys.SETTINGS_PASSWORD)) {
+            sp.getString(PrefKeys.SETTINGS_PASSWORD, null)
+        } else {
+            appDefaults.settingsPassword.takeIf { it.isNotBlank() }
+        }
+        set(value) = sp.edit {
+            if (value == null) {
+                remove(PrefKeys.SETTINGS_PASSWORD)
+            } else {
+                putString(PrefKeys.SETTINGS_PASSWORD, value)
+            }
+        }
+
     var autoSaveSettings: Boolean
         get() = sp.getBoolean(KEY_AUTO_SAVE_SETTINGS, true)
         set(value) = sp.edit { putBoolean(KEY_AUTO_SAVE_SETTINGS, value) }

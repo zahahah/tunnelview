@@ -214,6 +214,7 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
         val fallbackSshKey = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()
         val fallbackGitKey = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()
+        val fallbackSettingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
         val host = request.defaultInternalHost
         val port = request.defaultInternalPort
         val sshUser = request.defaultSshUser
@@ -221,6 +222,7 @@ class TemplateAppBuilder(private val context: Context) {
         val gitFile = request.defaultGitFilePath
         val sshKey = request.defaultSshPrivateKey
         val gitKey = request.defaultGitPrivateKey
+        val settingsPassword = request.defaultSettingsPassword
         if (
             host == fallbackHost &&
             port == fallbackPort &&
@@ -228,7 +230,8 @@ class TemplateAppBuilder(private val context: Context) {
             gitRepo == fallbackGitRepo &&
             gitFile == fallbackGitFile &&
             sshKey == fallbackSshKey &&
-            gitKey == fallbackGitKey
+            gitKey == fallbackGitKey &&
+            settingsPassword == fallbackSettingsPassword
         ) {
             return null
         }
@@ -240,6 +243,7 @@ class TemplateAppBuilder(private val context: Context) {
             put("gitFilePath", gitFile)
             put("sshPrivateKey", sshKey)
             put("gitPrivateKey", gitKey)
+            put("settingsPassword", settingsPassword)
         }
         return json.toString().toByteArray(Charsets.UTF_8)
     }
@@ -603,6 +607,7 @@ data class AppBuildRequest(
     val defaultGitFilePath: String = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),
     val defaultSshPrivateKey: String = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty(),
     val defaultGitPrivateKey: String = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty(),
+    val defaultSettingsPassword: String = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
     val iconBytes: ByteArray? = null,
     val iconMimeType: String? = null,
     val customSigning: CustomSigningConfig? = null

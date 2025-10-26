@@ -25,6 +25,15 @@
     <string name="label_persistent_notification">Mostrar notificação persistente do túnel</string>
     <string name="label_connection_debug">Habilitar logs detalhados de conexão</string>
     <string name="label_force_ipv4">Forçar IPv4 (ignorar IPv6)</string>
+    <string name="settings_password_title">Proteger ajustes com senha</string>
+    <string name="settings_password_description">Exigir uma senha antes de abrir esta tela.</string>
+    <string name="settings_password_new_label">Nova senha</string>
+    <string name="settings_password_confirm_label">Confirmar senha</string>
+    <string name="settings_password_hint">A senha precisa ter pelo menos %1$d caracteres.</string>
+    <string name="settings_password_toggle_visibility">Mostrar ou ocultar senha</string>
+    <string name="settings_password_error_length">A senha precisa ter pelo menos %1$d caracteres.</string>
+    <string name="settings_password_error_mismatch">As senhas não conferem.</string>
+    <string name="settings_password_error_required">Informe e confirme uma senha para ativar o bloqueio.</string>
     <string name="label_use_password">Usar senha em vez de chave</string>
     <string name="hint_ssh_password">Senha SSH</string>
     <string name="hint_ssh_fingerprint">Fingerprint SHA256 do host (ex.: SHA256:…)</string>
@@ -144,6 +153,8 @@
     <string name="app_builder_default_ssh_key_placeholder">Cole a chave PEM utilizada pelo túnel (opcional)</string>
     <string name="app_builder_default_git_key_label">Chave privada Git padrão</string>
     <string name="app_builder_default_git_key_placeholder">Cole a chave PEM para acesso ao repositório (opcional)</string>
+    <string name="app_builder_default_settings_password_label">Senha padrão das configurações</string>
+    <string name="app_builder_default_settings_password_placeholder">Deixe em branco para desativar</string>
     <string name="settings_git_section_title">Repositório Git (fallback)</string>
     <string name="settings_section_git_description">Clone um repositório e use o arquivo configurado
         como fallback.</string>
@@ -202,5 +213,11 @@
     <string name="language_option_english">Inglês</string>
     <string name="language_option_portuguese">Português (Brasil)</string>
     <string name="settings_language_updated">Idioma atualizado</string>
+    <string name="settings_password_gate_title">Configurações bloqueadas</string>
+    <string name="settings_password_gate_description">Informe a senha das configurações para continuar.</string>
+    <string name="settings_password_gate_placeholder">Senha</string>
+    <string name="settings_password_gate_unlock">Desbloquear</string>
+    <string name="settings_password_gate_cancel">Fechar</string>
+    <string name="settings_password_gate_error">Senha incorreta. Tente novamente.</string>
     <string name="dialog_close">Fechar</string>
 </resources>

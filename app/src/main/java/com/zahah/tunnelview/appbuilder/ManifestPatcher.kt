@@ -26,8 +26,11 @@ internal object ManifestPatcher {
             updatedStrings.add(newLabel)
             labelIndex = updatedStrings.lastIndex
         }
-        val packageIndex = updatedStrings.indexOf(newPackage)
-        require(packageIndex >= 0) { "Package string entry not found in manifest" }
+        var packageIndex = updatedStrings.indexOf(newPackage)
+        if (packageIndex == -1) {
+            updatedStrings.add(newPackage)
+            packageIndex = updatedStrings.lastIndex
+        }
 
         val newStringChunk = buildStringPoolChunk(updatedStrings, flags)
         val patched = rebuildManifest(manifestBytes, chunkSize, newStringChunk)

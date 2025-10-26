@@ -7,6 +7,7 @@ object PrefKeys {
     const val SSH_USER = "sshUser"
     const val USE_PASSWORD = "usePassword"
     const val SSH_PASSWORD = "sshPassword"
+    const val SETTINGS_PASSWORD = "settingsPassword"
     const val LAST_ENDPOINT = "lastEndpoint"
     const val LAST_ENDPOINT_SOURCE = "lastEndpointSource"
     const val NTFY_HISTORY = "ntfyHistory"
