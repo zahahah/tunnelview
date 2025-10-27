@@ -15,7 +15,8 @@ data class AppDefaults(
     val gitFilePath: String,
     val sshPrivateKey: String,
     val gitPrivateKey: String,
-    val settingsPassword: String
+    val settingsPassword: String,
+    val appBuilderEnabled: Boolean
 )
 
 object AppDefaultsProvider {
@@ -48,7 +49,8 @@ object AppDefaultsProvider {
                         sshPrivateKey = json.optString("sshPrivateKey", base.sshPrivateKey).ifBlank { base.sshPrivateKey },
                         gitPrivateKey = json.optString("gitPrivateKey", base.gitPrivateKey).ifBlank { base.gitPrivateKey },
                         settingsPassword = json.optString("settingsPassword", base.settingsPassword)
-                            .ifBlank { base.settingsPassword }
+                            .ifBlank { base.settingsPassword },
+                        appBuilderEnabled = json.optBoolean("appBuilderEnabled", base.appBuilderEnabled)
                     )
                 }
             }
@@ -67,7 +69,8 @@ object AppDefaultsProvider {
             gitFilePath = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),
             sshPrivateKey = decodeMultiline(BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()),
             gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()),
-            settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
+            settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
+            appBuilderEnabled = true
         )
     }
 }

@@ -46,7 +46,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.zahah.tunnelview.ui.settings.SettingsScreen
+import com.zahah.tunnelview.ui.theme.AppThemeManager
 import com.zahah.tunnelview.work.EndpointSyncWorker
+import com.zahah.tunnelview.ui.theme.TunnelViewTheme
 
 class SettingsActivity : ComponentActivity() {
 
@@ -69,14 +71,19 @@ class SettingsActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme {
+            var themeColorId by remember { mutableStateOf(prefs.themeColorId) }
+            var themeModeId by remember { mutableStateOf(prefs.themeModeId) }
+            LaunchedEffect(themeModeId) { AppThemeManager.apply(themeModeId) }
+            TunnelViewTheme(themeModeId = themeModeId, colorOptionId = themeColorId) {
                 var storedPassword by remember { mutableStateOf(prefs.settingsPassword.orEmpty()) }
                 var unlocked by rememberSaveable { mutableStateOf(storedPassword.isEmpty()) }
                 var authError by remember { mutableStateOf<String?>(null) }
                 DisposableEffect(Unit) {
                     val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                        if (key == PrefKeys.SETTINGS_PASSWORD) {
-                            storedPassword = prefs.settingsPassword.orEmpty()
+                        when (key) {
+                            PrefKeys.SETTINGS_PASSWORD -> storedPassword = prefs.settingsPassword.orEmpty()
+                            Prefs.KEY_THEME_COLOR -> themeColorId = prefs.themeColorId
+                            Prefs.KEY_THEME_MODE -> themeModeId = prefs.themeModeId
                         }
                     }
                     sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -92,6 +99,8 @@ class SettingsActivity : ComponentActivity() {
                 }
                 if (unlocked || storedPassword.isEmpty()) {
                     SettingsScreen(
+                        themeModeId = themeModeId,
+                        themeColorId = themeColorId,
                         onSyncNow = { EndpointSyncWorker.enqueueImmediate(applicationContext) },
                         onTestReconnect = {
                             val intent = Intent(this, TunnelService::class.java).setAction(Actions.RECONNECT)

@@ -113,6 +113,8 @@
     <string name="app_builder_icon_label">App icon (optional)</string>
     <string name="app_builder_select_icon">Choose image</string>
     <string name="app_builder_pick_placeholder">No file selected</string>
+    <string name="app_builder_template_bundle_title">Include original template</string>
+    <string name="app_builder_template_bundle_description">Keep base_template_apk.tar inside the generated APK so users can rebuild another version later. Disable to remove the App Builder section from the resulting app.</string>
     <string name="app_builder_build">Generate APK</string>
     <string name="app_builder_install">Install generated APK</string>
     <string name="app_builder_status_in_progress">Building APK…</string>
@@ -207,6 +209,17 @@
     <string name="diagnostics_value_none">None</string>
     <string name="settings_language_label">App language</string>
     <string name="settings_language_description">Choose the language used in the interface.</string>
+    <string name="settings_theme_color_label">Theme color</string>
+    <string name="settings_theme_color_description">Pick the accent color used across the app.</string>
+    <string name="settings_theme_mode_label">Theme appearance</string>
+    <string name="settings_theme_mode_description">Choose between light, dark, or follow the device.</string>
+    <string name="theme_color_option_indigo">Indigo</string>
+    <string name="theme_color_option_purple">Purple</string>
+    <string name="theme_color_option_emerald">Emerald</string>
+    <string name="theme_color_option_sunset">Sunset</string>
+    <string name="theme_mode_option_system">Use device setting</string>
+    <string name="theme_mode_option_light">Light</string>
+    <string name="theme_mode_option_dark">Dark</string>
     <string name="language_option_english">English</string>
     <string name="language_option_portuguese">Portuguese (Brazil)</string>
     <string name="settings_language_updated">Language updated</string>

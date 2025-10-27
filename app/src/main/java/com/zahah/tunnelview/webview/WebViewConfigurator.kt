@@ -4,6 +4,8 @@ import android.os.Build
 import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 
 data class WebViewSecurityConfig(
     val javaScriptEnabled: Boolean = true,
@@ -28,6 +30,7 @@ object WebViewConfigurator {
     fun applyDefaultSecurity(webView: WebView) {
         val config = defaultSecurityConfig()
         apply(webView.settings, config)
+        disableForcedDarkMode(webView)
         if (config.acceptCookies) {
             CookieManager.getInstance().setAcceptCookie(true)
         }
@@ -54,6 +57,16 @@ object WebViewConfigurator {
             }
             loadsImagesAutomatically = config.loadsImagesAutomatically
             blockNetworkImage = config.blockNetworkImage
+        }
+    }
+
+    private fun disableForcedDarkMode(webView: WebView) {
+        val settings = webView.settings
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, false)
+        } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
+            @Suppress("DEPRECATION")
+            WebSettingsCompat.setForceDark(settings, WebSettingsCompat.FORCE_DARK_OFF)
         }
     }
 }

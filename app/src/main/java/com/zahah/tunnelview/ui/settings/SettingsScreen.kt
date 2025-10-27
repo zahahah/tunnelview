@@ -9,12 +9,15 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -70,6 +73,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.layout.systemBars
 import android.provider.OpenableColumns
 import android.net.Uri
@@ -87,6 +91,9 @@ import com.zahah.tunnelview.appbuilder.AppBuildRequest
 import com.zahah.tunnelview.appbuilder.AppBuildResult
 import com.zahah.tunnelview.appbuilder.CustomSigningConfig
 import com.zahah.tunnelview.appbuilder.TemplateAppBuilder
+import com.zahah.tunnelview.ui.theme.ThemeColorOption
+import com.zahah.tunnelview.ui.theme.ThemeModeOption
+import com.zahah.tunnelview.ui.theme.AppThemeManager
 import kotlinx.coroutines.launch
 
 private enum class SettingsPage { ROOT, REMOTE_UPDATES, SSH, NETWORK, PREFERENCES, APP_BUILDER }
@@ -97,6 +104,8 @@ private const val MIN_SETTINGS_PASSWORD_LENGTH = 4
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
+    themeModeId: String,
+    themeColorId: String,
     onSyncNow: () -> Unit = {},
     onTestReconnect: () -> Unit = {},
     onExit: () -> Unit = {},
@@ -140,11 +149,17 @@ fun SettingsScreen(
     var forceIpv4 by rememberSaveable { mutableStateOf(false) }
     var autoSaveEnabled by rememberSaveable { mutableStateOf(prefs.autoSaveSettings) }
     var appLanguage by rememberSaveable { mutableStateOf(prefs.appLanguage) }
+    var currentThemeColorId by rememberSaveable { mutableStateOf(themeColorId) }
+    var currentThemeModeId by rememberSaveable { mutableStateOf(themeModeId) }
+    LaunchedEffect(themeColorId) { currentThemeColorId = themeColorId }
+    LaunchedEffect(themeModeId) { currentThemeModeId = themeModeId }
+    LaunchedEffect(currentThemeModeId) { AppThemeManager.apply(currentThemeModeId) }
     var settingsPasswordEnabled by rememberSaveable { mutableStateOf(!prefs.settingsPassword.isNullOrEmpty()) }
     var settingsPasswordInput by rememberSaveable { mutableStateOf("") }
     var settingsPasswordConfirm by rememberSaveable { mutableStateOf("") }
     var settingsPasswordError by remember { mutableStateOf<String?>(null) }
 
+    val builderEnabled = remember { appDefaults.appBuilderEnabled }
     val appBuilder = remember { TemplateAppBuilder(context) }
     var builderAppName by rememberSaveable { mutableStateOf("") }
     var builderPackage by rememberSaveable { mutableStateOf("") }
@@ -170,6 +185,7 @@ fun SettingsScreen(
     var builderCertificatePem by rememberSaveable { mutableStateOf("") }
     var builderPortError by remember { mutableStateOf<String?>(null) }
     var builderLocalPortError by remember { mutableStateOf<String?>(null) }
+    var includeBaseTemplate by rememberSaveable { mutableStateOf(builderEnabled) }
 
     val iconPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) {
@@ -200,6 +216,12 @@ fun SettingsScreen(
             }
             if (key == "sshPort") {
                 sshPort = prefs.sshPort?.takeIf { it > 0 }?.toString().orEmpty()
+            }
+            if (key == Prefs.KEY_THEME_COLOR) {
+                currentThemeColorId = prefs.themeColorId
+            }
+            if (key == Prefs.KEY_THEME_MODE) {
+                currentThemeModeId = prefs.themeModeId
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -364,6 +386,9 @@ fun SettingsScreen(
                 prefs.forceIpv4 = forceIpv4
                 prefs.autoSaveSettings = autoSaveEnabled
                 prefs.appLanguage = appLanguage
+                prefs.themeColorId = currentThemeColorId
+                prefs.themeModeId = currentThemeModeId
+                AppThemeManager.apply(currentThemeModeId)
                 prefs.settingsPassword = if (passwordRequired) passwordToPersist else ""
             }.onSuccess {
                 if (!passwordRequired || trimmedPassword.isNotEmpty()) {
@@ -462,7 +487,8 @@ fun SettingsScreen(
                             )
                         } else {
                             null
-                        }
+                        },
+                        includeBaseTemplate = includeBaseTemplate
                     )
                 )
             }.onSuccess { result ->
@@ -487,7 +513,6 @@ fun SettingsScreen(
         onExit()
     }
 
-    val baseModifier = modifier.windowInsetsPadding(WindowInsets.systemBars)
     val currentPageEnum = remember(currentPage) { SettingsPage.valueOf(currentPage) }
 
     BackHandler {
@@ -500,197 +525,249 @@ fun SettingsScreen(
             currentPage = SettingsPage.ROOT.name
         }
     }
+    LaunchedEffect(builderEnabled, currentPageEnum) {
+        if (!builderEnabled && currentPageEnum == SettingsPage.APP_BUILDER) {
+            currentPage = SettingsPage.ROOT.name
+        }
+    }
 
-    when (currentPageEnum) {
-        SettingsPage.ROOT -> SettingsRootPage(
-            modifier = baseModifier,
-            lastEndpoint = lastEndpoint,
-            lastEndpointSource = lastEndpointSource,
-            message = message,
-            saving = saving,
-            onSave = { triggerSave(showMessage = true) },
-            onOpenRemoteUpdates = { currentPage = SettingsPage.REMOTE_UPDATES.name },
-            onOpenSsh = { currentPage = SettingsPage.SSH.name },
-            onOpenNetwork = { currentPage = SettingsPage.NETWORK.name },
-            onOpenPreferences = { currentPage = SettingsPage.PREFERENCES.name },
-            onOpenAppBuilder = { currentPage = SettingsPage.APP_BUILDER.name },
-            onExit = ::exitScreen,
-        )
+    Surface(
+        modifier = modifier
+            .fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground
+    ) {
+        val baseModifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars)
+        val effectivePage = if (!builderEnabled && currentPageEnum == SettingsPage.APP_BUILDER) {
+            SettingsPage.ROOT
+        } else {
+            currentPageEnum
+        }
+        when (effectivePage) {
+            SettingsPage.ROOT -> SettingsRootPage(
+                modifier = baseModifier,
+                lastEndpoint = lastEndpoint,
+                lastEndpointSource = lastEndpointSource,
+                message = message,
+                saving = saving,
+                builderEnabled = builderEnabled,
+                onSave = { triggerSave(showMessage = true) },
+                onOpenRemoteUpdates = { currentPage = SettingsPage.REMOTE_UPDATES.name },
+                onOpenSsh = { currentPage = SettingsPage.SSH.name },
+                onOpenNetwork = { currentPage = SettingsPage.NETWORK.name },
+                onOpenPreferences = { currentPage = SettingsPage.PREFERENCES.name },
+                onOpenAppBuilder = { currentPage = SettingsPage.APP_BUILDER.name },
+                onExit = ::exitScreen,
+            )
 
-        SettingsPage.REMOTE_UPDATES -> RemoteUpdatesPage(
-            modifier = baseModifier,
-            topic = topic,
-            remoteUrl = remoteUrl,
-            accessKey = accessKey,
-            gitRepoUrl = gitRepoUrl,
-            gitBranch = gitBranch,
-            gitFilePath = gitFilePath,
-            gitPrivateKey = gitPrivateKey,
-            lastEndpoint = lastEndpoint,
-            lastEndpointSource = lastEndpointSource,
-            onBack = {
-                if (autoSaveEnabled) triggerSave(showMessage = false)
-                currentPage = SettingsPage.ROOT.name
-            },
-            onTopicChange = { topic = it },
-            onRemoteUrlChange = { remoteUrl = it },
-            onAccessKeyChange = { accessKey = it },
-            onGitRepoChange = { gitRepoUrl = it },
-            onGitBranchChange = { gitBranch = it },
-            onGitFilePathChange = { gitFilePath = it },
-            onGitKeyChange = { gitPrivateKey = it },
-            onSyncNow = onSyncNow,
-        )
-
-        SettingsPage.SSH -> SshSettingsPage(
-            modifier = baseModifier,
-            sshHost = sshHost,
-            sshPort = sshPort,
-            sshUser = sshUser,
-            sshPrivateKey = sshPrivateKey,
-            usePassword = usePassword,
-            sshPassword = sshPassword,
-            fingerprint = fingerprint,
-            onBack = {
-                if (autoSaveEnabled) triggerSave(showMessage = false)
-                currentPage = SettingsPage.ROOT.name
-            },
-            onHostChange = { sshHost = it },
-            onPortChange = { sshPort = it },
-            onUserChange = { sshUser = it },
-            onKeyChange = { sshPrivateKey = it },
-            onToggleUsePassword = { checked ->
-                usePassword = checked
-                if (!checked) sshPassword = ""
-            },
-            onPasswordChange = { sshPassword = it },
-            onFingerprintChange = { fingerprint = it },
-        )
-
-        SettingsPage.NETWORK -> NetworkSettingsPage(
-            modifier = baseModifier,
-            localPort = localPort,
-            remoteHost = remoteHost,
-            remotePort = remotePort,
-            localLanHost = localLanHost,
-            localLanPort = localLanPort,
-            onBack = {
-                if (autoSaveEnabled) triggerSave(showMessage = false)
-                currentPage = SettingsPage.ROOT.name
-            },
-            onLocalPortChange = { localPort = it },
-            onRemoteHostChange = { remoteHost = it },
-            onRemotePortChange = { remotePort = it },
-            onLocalLanHostChange = { localLanHost = it },
-            onLocalLanPortChange = { localLanPort = it },
-        )
-
-        SettingsPage.PREFERENCES -> PreferencesPage(
-            modifier = baseModifier,
-            cacheLastPage = cacheLastPage,
-            persistentNotification = persistentNotification,
-            connectionDebug = connectionDebug,
-            forceIpv4 = forceIpv4,
-            autoSaveEnabled = autoSaveEnabled,
-            languageCode = appLanguage,
-            settingsPasswordEnabled = settingsPasswordEnabled,
-            settingsPasswordInput = settingsPasswordInput,
-            settingsPasswordConfirm = settingsPasswordConfirm,
-            settingsPasswordError = settingsPasswordError,
-            onBack = {
-                if (autoSaveEnabled) triggerSave(showMessage = false)
-                currentPage = SettingsPage.ROOT.name
-            },
-            onCacheChange = { cacheLastPage = it },
-            onPersistentNotificationChange = { persistentNotification = it },
-            onConnectionDebugChange = { connectionDebug = it },
-            onForceIpv4Change = { forceIpv4 = it },
-            onAutoSaveChange = { enabled ->
-                autoSaveEnabled = enabled
-                prefs.autoSaveSettings = enabled
-                if (enabled) triggerSave(showMessage = false)
-            },
-            onSettingsPasswordEnabledChange = { enabled ->
-                settingsPasswordEnabled = enabled
-                settingsPasswordError = null
-                if (!enabled) {
-                    settingsPasswordInput = ""
-                    settingsPasswordConfirm = ""
-                }
-            },
-            onSettingsPasswordInputChange = {
-                settingsPasswordInput = it
-                settingsPasswordError = null
-            },
-            onSettingsPasswordConfirmChange = {
-                settingsPasswordConfirm = it
-                settingsPasswordError = null
-            },
-            onLanguageChange = { code ->
-                if (appLanguage != code) {
-                    appLanguage = code
-                    AppLocaleManager.applyLanguage(context, code)
-                    message = context.getString(R.string.settings_language_updated)
-                }
-            },
-            onTestReconnect = onTestReconnect
-        )
-
-        SettingsPage.APP_BUILDER -> AppBuilderPage(
-            modifier = baseModifier,
-            appName = builderAppName,
-            packageName = builderPackage,
-            packageValid = builderPackage.isBlank() || PACKAGE_NAME_REGEX.matches(builderPackage),
-            statusMessage = builderStatus,
-            errorMessage = builderError,
-            resultPath = builderResult?.fileName,
-            isBuilding = builderBusy,
-            selectedIconName = builderIconName,
-            useCustomSigning = builderUseCustomSigning,
-            defaultInternalHost = builderDefaultHost,
-            defaultInternalPort = builderDefaultPort,
-            defaultLocalPort = builderDefaultLocalPort,
-            defaultSshUser = builderDefaultSshUser,
-            defaultGitRepoUrl = builderDefaultGitRepo,
-            defaultGitFilePath = builderDefaultGitFile,
-            defaultPortError = builderPortError,
-            defaultLocalPortError = builderLocalPortError,
-            defaultSshKey = builderDefaultSshKey,
-            defaultGitKey = builderDefaultGitKey,
-            defaultSettingsPassword = builderDefaultSettingsPassword,
-            onBack = {
-                if (!builderBusy) {
+            SettingsPage.REMOTE_UPDATES -> RemoteUpdatesPage(
+                modifier = baseModifier,
+                topic = topic,
+                remoteUrl = remoteUrl,
+                accessKey = accessKey,
+                gitRepoUrl = gitRepoUrl,
+                gitBranch = gitBranch,
+                gitFilePath = gitFilePath,
+                gitPrivateKey = gitPrivateKey,
+                lastEndpoint = lastEndpoint,
+                lastEndpointSource = lastEndpointSource,
+                onBack = {
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
                     currentPage = SettingsPage.ROOT.name
-                }
-            },
-            onAppNameChange = { builderAppName = it },
-            onPackageChange = { builderPackage = it },
-            onDefaultHostChange = { builderDefaultHost = it },
-            onDefaultPortChange = {
-                builderDefaultPort = it
-                builderPortError = null
-            },
-            onDefaultLocalPortChange = {
-                builderDefaultLocalPort = it
-                builderLocalPortError = null
-            },
-            onDefaultSshUserChange = { builderDefaultSshUser = it },
-            onDefaultGitRepoChange = { builderDefaultGitRepo = it },
-            onDefaultGitFileChange = { builderDefaultGitFile = it },
-            onDefaultSshKeyChange = { builderDefaultSshKey = it },
-            onDefaultGitKeyChange = { builderDefaultGitKey = it },
-            onDefaultSettingsPasswordChange = { builderDefaultSettingsPassword = it },
-            onPickIcon = { iconPickerLauncher.launch("image/*") },
-            onToggleCustomSigning = { builderUseCustomSigning = it },
-            signingAlias = builderSigningAlias,
-            onSigningAliasChange = { builderSigningAlias = it },
-            privateKeyPem = builderPrivateKeyPem,
-            onPrivateKeyChange = { builderPrivateKeyPem = it },
-            certificatePem = builderCertificatePem,
-            onCertificateChange = { builderCertificatePem = it },
-            onBuild = { triggerAppBuild() },
-            onInstall = builderResult?.let { result -> { appBuilder.install(result.downloadUri) } }
-        )
+                },
+                onTopicChange = { topic = it },
+                onRemoteUrlChange = { remoteUrl = it },
+                onAccessKeyChange = { accessKey = it },
+                onGitRepoChange = { gitRepoUrl = it },
+                onGitBranchChange = { gitBranch = it },
+                onGitFilePathChange = { gitFilePath = it },
+                onGitKeyChange = { gitPrivateKey = it },
+                onSyncNow = onSyncNow,
+            )
+
+            SettingsPage.SSH -> SshSettingsPage(
+                modifier = baseModifier,
+                sshHost = sshHost,
+                sshPort = sshPort,
+                sshUser = sshUser,
+                sshPrivateKey = sshPrivateKey,
+                usePassword = usePassword,
+                sshPassword = sshPassword,
+                fingerprint = fingerprint,
+                onBack = {
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                    currentPage = SettingsPage.ROOT.name
+                },
+                onHostChange = { sshHost = it },
+                onPortChange = { sshPort = it },
+                onUserChange = { sshUser = it },
+                onKeyChange = { sshPrivateKey = it },
+                onToggleUsePassword = { checked ->
+                    usePassword = checked
+                    if (!checked) sshPassword = ""
+                },
+                onPasswordChange = { sshPassword = it },
+                onFingerprintChange = { fingerprint = it },
+            )
+
+            SettingsPage.NETWORK -> NetworkSettingsPage(
+                modifier = baseModifier,
+                localPort = localPort,
+                remoteHost = remoteHost,
+                remotePort = remotePort,
+                localLanHost = localLanHost,
+                localLanPort = localLanPort,
+                onBack = {
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                    currentPage = SettingsPage.ROOT.name
+                },
+                onLocalPortChange = { localPort = it },
+                onRemoteHostChange = { remoteHost = it },
+                onRemotePortChange = { remotePort = it },
+                onLocalLanHostChange = { localLanHost = it },
+                onLocalLanPortChange = { localLanPort = it },
+            )
+
+            SettingsPage.PREFERENCES -> PreferencesPage(
+                modifier = baseModifier,
+                cacheLastPage = cacheLastPage,
+                persistentNotification = persistentNotification,
+                connectionDebug = connectionDebug,
+                forceIpv4 = forceIpv4,
+                autoSaveEnabled = autoSaveEnabled,
+                languageCode = appLanguage,
+                themeColorId = currentThemeColorId,
+                themeModeId = currentThemeModeId,
+                settingsPasswordEnabled = settingsPasswordEnabled,
+                settingsPasswordInput = settingsPasswordInput,
+                settingsPasswordConfirm = settingsPasswordConfirm,
+                settingsPasswordError = settingsPasswordError,
+                onBack = {
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                    currentPage = SettingsPage.ROOT.name
+                },
+                onCacheChange = {
+                    cacheLastPage = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
+                onPersistentNotificationChange = {
+                    persistentNotification = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
+                onConnectionDebugChange = {
+                    connectionDebug = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
+                onForceIpv4Change = {
+                    forceIpv4 = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
+                onAutoSaveChange = { enabled ->
+                    autoSaveEnabled = enabled
+                    prefs.autoSaveSettings = enabled
+                    if (enabled) triggerSave(showMessage = false)
+                },
+                onSettingsPasswordEnabledChange = { enabled ->
+                    settingsPasswordEnabled = enabled
+                    settingsPasswordError = null
+                    if (!enabled) {
+                        settingsPasswordInput = ""
+                        settingsPasswordConfirm = ""
+                    }
+                },
+                onSettingsPasswordInputChange = {
+                    settingsPasswordInput = it
+                    settingsPasswordError = null
+                },
+                onSettingsPasswordConfirmChange = {
+                    settingsPasswordConfirm = it
+                    settingsPasswordError = null
+                },
+                onLanguageChange = { code ->
+                    if (appLanguage != code) {
+                        appLanguage = code
+                        AppLocaleManager.applyLanguage(context, code)
+                        message = context.getString(R.string.settings_language_updated)
+                    }
+                },
+                onThemeColorChange = { selected ->
+                    if (currentThemeColorId != selected) {
+                        currentThemeColorId = selected
+                        prefs.themeColorId = selected
+                    }
+                },
+                onThemeModeChange = { selected ->
+                    if (currentThemeModeId != selected) {
+                        currentThemeModeId = selected
+                        prefs.themeModeId = selected
+                        AppThemeManager.apply(selected)
+                    }
+                },
+                onTestReconnect = onTestReconnect
+            )
+
+            SettingsPage.APP_BUILDER -> if (builderEnabled) {
+                AppBuilderPage(
+                    modifier = baseModifier,
+                    appName = builderAppName,
+                    packageName = builderPackage,
+                    packageValid = builderPackage.isBlank() || PACKAGE_NAME_REGEX.matches(builderPackage),
+                    statusMessage = builderStatus,
+                    errorMessage = builderError,
+                    resultPath = builderResult?.fileName,
+                    isBuilding = builderBusy,
+                    selectedIconName = builderIconName,
+                    useCustomSigning = builderUseCustomSigning,
+                    includeBaseTemplate = includeBaseTemplate,
+                    defaultInternalHost = builderDefaultHost,
+                    defaultInternalPort = builderDefaultPort,
+                    defaultLocalPort = builderDefaultLocalPort,
+                    defaultSshUser = builderDefaultSshUser,
+                    defaultGitRepoUrl = builderDefaultGitRepo,
+                    defaultGitFilePath = builderDefaultGitFile,
+                    defaultPortError = builderPortError,
+                    defaultLocalPortError = builderLocalPortError,
+                    defaultSshKey = builderDefaultSshKey,
+                    defaultGitKey = builderDefaultGitKey,
+                    defaultSettingsPassword = builderDefaultSettingsPassword,
+                    onBack = {
+                        if (!builderBusy) {
+                            currentPage = SettingsPage.ROOT.name
+                        }
+                    },
+                    onAppNameChange = { builderAppName = it },
+                    onPackageChange = { builderPackage = it },
+                    onDefaultHostChange = { builderDefaultHost = it },
+                    onDefaultPortChange = {
+                        builderDefaultPort = it
+                        builderPortError = null
+                    },
+                    onDefaultLocalPortChange = {
+                        builderDefaultLocalPort = it
+                        builderLocalPortError = null
+                    },
+                    onDefaultSshUserChange = { builderDefaultSshUser = it },
+                    onDefaultGitRepoChange = { builderDefaultGitRepo = it },
+                    onDefaultGitFileChange = { builderDefaultGitFile = it },
+                    onDefaultSshKeyChange = { builderDefaultSshKey = it },
+                    onDefaultGitKeyChange = { builderDefaultGitKey = it },
+                    onDefaultSettingsPasswordChange = { builderDefaultSettingsPassword = it },
+                    onPickIcon = { iconPickerLauncher.launch("image/*") },
+                    onToggleCustomSigning = { builderUseCustomSigning = it },
+                    onIncludeBaseTemplateChange = { includeBaseTemplate = it },
+                    signingAlias = builderSigningAlias,
+                    onSigningAliasChange = { builderSigningAlias = it },
+                    privateKeyPem = builderPrivateKeyPem,
+                    onPrivateKeyChange = { builderPrivateKeyPem = it },
+                    certificatePem = builderCertificatePem,
+                    onCertificateChange = { builderCertificatePem = it },
+                    onBuild = { triggerAppBuild() },
+                    onInstall = builderResult?.let { result -> { appBuilder.install(result.downloadUri) } }
+                )
+            }
+        }
     }
 }
 
@@ -701,6 +778,7 @@ private fun SettingsRootPage(
     lastEndpointSource: String?,
     message: String?,
     saving: Boolean,
+    builderEnabled: Boolean,
     onSave: () -> Unit,
     onOpenRemoteUpdates: () -> Unit,
     onOpenSsh: () -> Unit,
@@ -759,11 +837,13 @@ private fun SettingsRootPage(
             description = stringResource(id = R.string.settings_section_preferences_description),
             onClick = onOpenPreferences
         )
-        SettingsNavigationCard(
-            title = stringResource(id = R.string.settings_section_builder_title),
-            description = stringResource(id = R.string.settings_section_builder_description),
-            onClick = onOpenAppBuilder
-        )
+        if (builderEnabled) {
+            SettingsNavigationCard(
+                title = stringResource(id = R.string.settings_section_builder_title),
+                description = stringResource(id = R.string.settings_section_builder_description),
+                onClick = onOpenAppBuilder
+            )
+        }
         message?.let {
             Text(
                 text = it,
@@ -1240,6 +1320,8 @@ private fun PreferencesPage(
     forceIpv4: Boolean,
     autoSaveEnabled: Boolean,
     languageCode: String,
+    themeColorId: String,
+    themeModeId: String,
     settingsPasswordEnabled: Boolean,
     settingsPasswordInput: String,
     settingsPasswordConfirm: String,
@@ -1254,6 +1336,8 @@ private fun PreferencesPage(
     onSettingsPasswordInputChange: (String) -> Unit,
     onSettingsPasswordConfirmChange: (String) -> Unit,
     onLanguageChange: (String) -> Unit,
+    onThemeColorChange: (String) -> Unit,
+    onThemeModeChange: (String) -> Unit,
     onTestReconnect: () -> Unit,
 ) {
     Column(
@@ -1304,6 +1388,14 @@ private fun PreferencesPage(
                         }
                     }
                 }
+                ThemeColorPicker(
+                    selectedId = themeColorId,
+                    onSelected = onThemeColorChange
+                )
+                ThemeModeSelector(
+                    selectedId = themeModeId,
+                    onSelected = onThemeModeChange
+                )
                 PreferenceSwitchRow(
                     title = stringResource(id = R.string.settings_auto_save_label),
                     checked = autoSaveEnabled,
@@ -1419,6 +1511,89 @@ private fun SettingsPasswordSection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ThemeColorPicker(
+    selectedId: String,
+    onSelected: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(id = R.string.settings_theme_color_label),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(id = R.string.settings_theme_color_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        val useDarkPreview = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ThemeColorOption.entries.forEach { option ->
+                val isSelected = option.id.equals(selectedId, ignoreCase = true)
+                val previewColor = if (useDarkPreview) option.darkPrimary else option.lightPrimary
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onSelected(option.id) },
+                    label = { Text(text = stringResource(id = option.labelRes)) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(color = previewColor, shape = CircleShape)
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ThemeModeSelector(
+    selectedId: String,
+    onSelected: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(id = R.string.settings_theme_mode_label),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = stringResource(id = R.string.settings_theme_mode_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ThemeModeOption.entries.forEach { option ->
+                val isSelected = option.id.equals(selectedId, ignoreCase = true)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onSelected(option.id) },
+                    label = { Text(text = stringResource(id = option.labelRes)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PasswordOutlinedField(
     value: String,
@@ -1462,6 +1637,7 @@ private fun AppBuilderPage(
     isBuilding: Boolean,
     selectedIconName: String?,
     useCustomSigning: Boolean,
+    includeBaseTemplate: Boolean,
     defaultInternalHost: String,
     defaultInternalPort: String,
     defaultLocalPort: String,
@@ -1487,6 +1663,7 @@ private fun AppBuilderPage(
     onDefaultSettingsPasswordChange: (String) -> Unit,
     onPickIcon: () -> Unit,
     onToggleCustomSigning: (Boolean) -> Unit,
+    onIncludeBaseTemplateChange: (Boolean) -> Unit,
     signingAlias: String,
     onSigningAliasChange: (String) -> Unit,
     privateKeyPem: String,
@@ -1543,6 +1720,33 @@ private fun AppBuilderPage(
             style = MaterialTheme.typography.bodySmall,
             color = if (selectedIconName != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline
         )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(id = R.string.app_builder_template_bundle_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = stringResource(id = R.string.app_builder_template_bundle_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = includeBaseTemplate,
+                onCheckedChange = onIncludeBaseTemplateChange,
+                enabled = !isBuilding,
+                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+            )
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = stringResource(id = R.string.app_builder_defaults_title),
@@ -1772,7 +1976,8 @@ private fun SettingsNavigationCard(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = description,
@@ -1822,7 +2027,8 @@ private fun ExpandableSettingsSection(
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface
                 )
             }
             AnimatedVisibility(
@@ -1856,12 +2062,14 @@ private fun BackHeader(
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = stringResource(id = R.string.settings_back)
+            contentDescription = stringResource(id = R.string.settings_back),
+            tint = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -1881,7 +2089,8 @@ private fun PreferenceSwitchRow(
         Text(
             modifier = Modifier.weight(1f),
             text = title,
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
         )
         Switch(
             checked = checked,

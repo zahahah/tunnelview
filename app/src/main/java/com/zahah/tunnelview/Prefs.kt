@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import org.json.JSONArray
+import java.util.Locale
 
 class Prefs(ctx: Context) {
     private val sp: SharedPreferences =
@@ -333,6 +334,14 @@ class Prefs(ctx: Context) {
         get() = sp.getString(KEY_APP_LANGUAGE, DEFAULT_APP_LANGUAGE) ?: DEFAULT_APP_LANGUAGE
         set(value) = sp.edit { putString(KEY_APP_LANGUAGE, value) }
 
+    var themeColorId: String
+        get() = sp.getString(KEY_THEME_COLOR, DEFAULT_THEME_COLOR) ?: DEFAULT_THEME_COLOR
+        set(value) = sp.edit { putString(KEY_THEME_COLOR, value.lowercase(Locale.US)) }
+
+    var themeModeId: String
+        get() = sp.getString(KEY_THEME_MODE, DEFAULT_THEME_MODE) ?: DEFAULT_THEME_MODE
+        set(value) = sp.edit { putString(KEY_THEME_MODE, value.lowercase(Locale.US)) }
+
     var sshConnectTimeoutSeconds: Int
         get() = sp.getInt(KEY_SSH_CONNECT_TIMEOUT, DEFAULT_TIMEOUT_SECONDS).coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
         set(value) = sp.edit { putInt(KEY_SSH_CONNECT_TIMEOUT, value.coerceIn(5, 120)) }
@@ -355,6 +364,8 @@ class Prefs(ctx: Context) {
         private const val KEY_FORCE_IPV4 = "sshForceIpv4"
         private const val KEY_AUTO_SAVE_SETTINGS = "settingsAutoSave"
         private const val KEY_APP_LANGUAGE = "appLanguage"
+        const val KEY_THEME_COLOR = "appThemeColor"
+        const val KEY_THEME_MODE = "appThemeMode"
         private const val KEY_SSH_CONNECT_TIMEOUT = "sshConnectTimeoutSeconds"
         private const val KEY_SSH_SOCKET_TIMEOUT = "sshSocketTimeoutSeconds"
         private const val KEY_SSH_KEEP_ALIVE = "sshKeepAliveIntervalSeconds"
@@ -366,5 +377,7 @@ class Prefs(ctx: Context) {
         private const val DEFAULT_NTFY_URL = "https://ntfy.sh/s10e-server-ngrok/sse"
         private const val LEGACY_DEFAULT_NTFY_URL = "https://ntfy.sh/ntfy-update-from-server/sse"
         const val DEFAULT_APP_LANGUAGE = "en"
+        const val DEFAULT_THEME_COLOR = "indigo"
+        const val DEFAULT_THEME_MODE = "system"
     }
 }

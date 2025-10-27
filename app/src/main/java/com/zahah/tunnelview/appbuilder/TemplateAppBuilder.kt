@@ -61,7 +61,6 @@ class TemplateAppBuilder(private val context: Context) {
     suspend fun build(request: AppBuildRequest): AppBuildResult = withContext(Dispatchers.IO) {
         val sanitizedName = request.appName.trim()
         val sanitizedPackage = request.packageName.trim()
-        val basePackage = context.packageName
         require(sanitizedName.isNotBlank()) { "Nome do app não pode ser vazio" }
         require(PACKAGE_REGEX.matches(sanitizedPackage)) { "Nome de pacote inválido" }
 
@@ -76,13 +75,22 @@ class TemplateAppBuilder(private val context: Context) {
             zip.getInputStream(manifestEntry).use { it.readBytes() }
         }
 
-        val patchedManifest = ManifestPatcher.patch(manifestBytes, basePackage, sanitizedPackage, sanitizedName)
+        val patchedManifest = ManifestPatcher.patch(manifestBytes, sanitizedPackage, sanitizedName)
         val iconAssets = prepareIconAssets(request.iconBytes, request.iconMimeType)
         val extraEntries = mutableMapOf<String, ByteArray>()
         buildAppDefaultsPayload(request)?.let { payload ->
             extraEntries[APP_DEFAULTS_ASSET_PATH] = payload
         }
-        repackageApk(baseApk, unsignedApk, patchedManifest, iconAssets, extraEntries)
+        val templateAssetPath = BASE_TEMPLATE_ASSET_PATH
+        val extraRemovals = mutableSetOf<String>()
+        if (request.includeBaseTemplate) {
+            val templateBytes = context.assets.open(BASE_TEMPLATE_TAR).use { it.readBytes() }
+            extraEntries[templateAssetPath] = templateBytes
+            extraRemovals += templateAssetPath
+        } else {
+            extraRemovals += templateAssetPath
+        }
+        repackageApk(baseApk, unsignedApk, patchedManifest, iconAssets, extraEntries, extraRemovals)
         ensureValidZip(unsignedApk, stage = "Reempacotamento")
 
         val signedApk = File(workDir, "custom-signed-${UUID.randomUUID()}.apk")
@@ -216,6 +224,7 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackGitKey = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()
         val fallbackLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty()
         val fallbackSettingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
+        val fallbackBuilderEnabled = true
         val host = request.defaultInternalHost
         val port = request.defaultInternalPort
         val localPort = request.defaultLocalPort
@@ -225,6 +234,7 @@ class TemplateAppBuilder(private val context: Context) {
         val sshKey = request.defaultSshPrivateKey
         val gitKey = request.defaultGitPrivateKey
         val settingsPassword = request.defaultSettingsPassword
+        val builderEnabled = request.includeBaseTemplate
         if (
             host == fallbackHost &&
             port == fallbackPort &&
@@ -234,7 +244,8 @@ class TemplateAppBuilder(private val context: Context) {
             sshKey == fallbackSshKey &&
             gitKey == fallbackGitKey &&
             localPort == fallbackLocalPort &&
-            settingsPassword == fallbackSettingsPassword
+            settingsPassword == fallbackSettingsPassword &&
+            builderEnabled == fallbackBuilderEnabled
         ) {
             return null
         }
@@ -248,6 +259,7 @@ class TemplateAppBuilder(private val context: Context) {
             put("sshPrivateKey", sshKey)
             put("gitPrivateKey", gitKey)
             put("settingsPassword", settingsPassword)
+            put("appBuilderEnabled", builderEnabled)
         }
         return json.toString().toByteArray(Charsets.UTF_8)
     }
@@ -362,15 +374,20 @@ class TemplateAppBuilder(private val context: Context) {
         outputApk: File,
         manifestBytes: ByteArray,
         iconAssets: IconAssets?,
-        additionalEntries: Map<String, ByteArray>
+        additionalEntries: Map<String, ByteArray>,
+        extraEntriesToRemove: Set<String>
     ) {
         if (outputApk.exists()) outputApk.delete()
-        val entriesToRemove = iconAssets?.entriesToRemove ?: emptySet()
         val entriesToAdd = buildMap {
             iconAssets?.entriesToAdd?.let { putAll(it) }
             if (additionalEntries.isNotEmpty()) {
                 putAll(additionalEntries)
             }
+        }
+        val entriesToRemove = buildSet {
+            iconAssets?.entriesToRemove?.let { addAll(it) }
+            addAll(extraEntriesToRemove)
+            addAll(entriesToAdd.keys)
         }
         val arscReplacements = iconAssets?.arscStringReplacements ?: emptyMap()
         ZipFile(baseApk).use { zip ->
@@ -577,6 +594,7 @@ class TemplateAppBuilder(private val context: Context) {
 
     companion object {
         private const val BASE_TEMPLATE_TAR = "base_template_apk.tar"
+        private const val BASE_TEMPLATE_ASSET_PATH = "assets/$BASE_TEMPLATE_TAR"
         private const val MANIFEST_ENTRY = "AndroidManifest.xml"
         private const val RESOURCES_ARSC_ENTRY = "resources.arsc"
         private const val WORK_DIR_NAME = "app_builder"
@@ -615,7 +633,8 @@ data class AppBuildRequest(
     val defaultSettingsPassword: String = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
     val iconBytes: ByteArray? = null,
     val iconMimeType: String? = null,
-    val customSigning: CustomSigningConfig? = null
+    val customSigning: CustomSigningConfig? = null,
+    val includeBaseTemplate: Boolean = true
 )
 
 data class AppBuildResult(

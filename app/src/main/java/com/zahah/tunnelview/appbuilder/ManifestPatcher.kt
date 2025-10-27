@@ -10,8 +10,9 @@ internal object ManifestPatcher {
     private const val TYPE_STRING = 0x03
     private const val MANIFEST_HEADER_SIZE = 8
 
-    fun patch(manifestBytes: ByteArray, basePackage: String, newPackage: String, newLabel: String): ByteArray {
+    fun patch(manifestBytes: ByteArray, newPackage: String, newLabel: String): ByteArray {
         val (strings, flags, chunkSize) = parseStringPool(manifestBytes)
+        val basePackage = findCurrentPackage(manifestBytes, strings)
         val updatedStrings = strings.map { current ->
             when {
                 current == basePackage -> newPackage
@@ -60,6 +61,41 @@ internal object ManifestPatcher {
             readUtf16(manifest, stringsBase + relative)
         }
         return Triple(result, flags, chunkSize)
+    }
+
+    private fun findCurrentPackage(manifest: ByteArray, strings: List<String>): String {
+        val stringIndex = strings.withIndex().associate { it.value to it.index }
+        val manifestNameIdx = stringIndex["manifest"] ?: error("'manifest' tag not found in string pool")
+        val packageAttrIdx = stringIndex["package"] ?: error("'package' attr not found in string pool")
+        val buffer = ByteBuffer.wrap(manifest).order(ByteOrder.LITTLE_ENDIAN)
+        var offset = MANIFEST_HEADER_SIZE
+        while (offset < manifest.size) {
+            val type = buffer.getShort(offset).toInt() and 0xFFFF
+            val headerSize = buffer.getShort(offset + 2).toInt() and 0xFFFF
+            val chunkSize = buffer.getInt(offset + 4)
+            if (type == CHUNK_START_TAG) {
+                val nameIdx = buffer.getInt(offset + 20)
+                val attrStart = buffer.getShort(offset + 24).toInt() and 0xFFFF
+                val attrSize = buffer.getShort(offset + 26).toInt() and 0xFFFF
+                val attrCount = buffer.getShort(offset + 28).toInt() and 0xFFFF
+                var attrOffset = offset + headerSize + attrStart
+                repeat(attrCount) {
+                    val attrNameIdx = buffer.getInt(attrOffset + 4)
+                    if (nameIdx == manifestNameIdx && attrNameIdx == packageAttrIdx) {
+                        val attrType = buffer.get(attrOffset + 15).toInt() and 0xFF
+                        if (attrType == TYPE_STRING) {
+                            val valueIdx = buffer.getInt(attrOffset + 16)
+                            return strings.getOrElse(valueIdx) {
+                                error("Package string index $valueIdx out of bounds")
+                            }
+                        }
+                    }
+                    attrOffset += attrSize
+                }
+            }
+            offset += chunkSize
+        }
+        error("Package attribute not found in manifest")
     }
 
     private fun buildStringPoolChunk(strings: List<String>, flags: Int): ByteArray {

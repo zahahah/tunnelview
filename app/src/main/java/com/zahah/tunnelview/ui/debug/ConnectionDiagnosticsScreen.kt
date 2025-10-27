@@ -1,6 +1,7 @@
 package com.zahah.tunnelview.ui.debug
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +27,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,9 +43,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zahah.tunnelview.R
 import com.zahah.tunnelview.AppLocaleManager
+import com.zahah.tunnelview.Prefs
 import com.zahah.tunnelview.logging.ConnEvent
 import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
+import com.zahah.tunnelview.ui.theme.AppThemeManager
+import com.zahah.tunnelview.ui.theme.TunnelViewTheme
 import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
@@ -51,6 +57,10 @@ class ConnectionDiagnosticsActivity : ComponentActivity() {
 
     private val tunnelManager by lazy { TunnelManager.getInstance(applicationContext) }
     private val connLogger by lazy { ConnLogger.getInstance(applicationContext) }
+    private val prefs by lazy { Prefs(this) }
+    private val sharedPrefs: SharedPreferences by lazy {
+        getSharedPreferences("prefs", Context.MODE_PRIVATE)
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppLocaleManager.wrapContext(newBase))
@@ -64,8 +74,21 @@ class ConnectionDiagnosticsActivity : ComponentActivity() {
             val snackbarHostState = remember { SnackbarHostState() }
             var isTesting by remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
+            var themeColorId by remember { mutableStateOf(prefs.themeColorId) }
+            var themeModeId by remember { mutableStateOf(prefs.themeModeId) }
+            DisposableEffect(Unit) {
+                val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    when (key) {
+                        Prefs.KEY_THEME_COLOR -> themeColorId = prefs.themeColorId
+                        Prefs.KEY_THEME_MODE -> themeModeId = prefs.themeModeId
+                    }
+                }
+                sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+            }
 
-            MaterialTheme {
+            LaunchedEffect(themeModeId) { AppThemeManager.apply(themeModeId) }
+            TunnelViewTheme(themeModeId = themeModeId, colorOptionId = themeColorId) {
                 ConnectionDiagnosticsScreen(
                     snapshot = snapshot,
                     events = events,
@@ -314,7 +337,7 @@ private fun DiagnosticsSummaryPreview() {
         socketTimeoutMillis = 20_000,
         keepAliveIntervalSeconds = 20
     )
-    MaterialTheme {
+    TunnelViewTheme {
         DiagnosticsSummary(snapshot)
     }
 }
