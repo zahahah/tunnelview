@@ -54,8 +54,9 @@ TunnelView is a SSH tunneling Webview Android app to open websites safely, even 
    | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
    | `DEFAULT_SSH_PRIVATE_KEY_PATH`                    | Path to a PEM file (relative to repo) containing the default tunnel key. Shipping keys live under `app/src/main/res/raw/`. |
    | `DEFAULT_GIT_PRIVATE_KEY_PATH`                    | PEM to reach the fallback Git repo.                                                                                        |
-   | `DEFAULT_INTERNAL_HOST` / `DEFAULT_INTERNAL_PORT` | Internal web host/port the tunnel forwards to (e.g. `192.168.0.7:3000`).                                                   |
-   | `DEFAULT_SSH_USER`                                | Default Linux user for the bastion.                                                                                        |
+| `DEFAULT_INTERNAL_HOST` / `DEFAULT_INTERNAL_PORT` | Internal web host/port the tunnel forwards to (e.g. `192.168.0.7:3000`).                                                   |
+| `DEFAULT_LOCAL_PORT`                              | Local loopback port exposed on the device (default `8090`).                                                                |
+| `DEFAULT_SSH_USER`                                | Default Linux user for the bastion.                                                                                        |
    | `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`  | Optional Git repo + file that holds the latest endpoint payload.                                                           |
 
 3. **Provide PEM files (never commit production keys)**

@@ -21,7 +21,7 @@ object Keys {
 
 object Defaults {
     // default local tunnel port (used by MainActivity)
-    const val LOCAL_PORT = 8090
+    val LOCAL_PORT: Int = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty().toIntOrNull() ?: 8090
     // optional ready-to-use URL (in case you prefer using it directly)
-    const val WEB_URL = "http://127.0.0.1:$LOCAL_PORT"
+    val WEB_URL: String = "http://127.0.0.1:$LOCAL_PORT"
 }

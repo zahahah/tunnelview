@@ -511,6 +511,7 @@ class TunnelManager private constructor(context: Context) {
             return
         }
         val repoUrl = credentialsStore.gitRepoUrl()?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val filePath = credentialsStore.gitFilePath()?.trim()?.takeIf { it.isNotEmpty() } ?: return
         if (endpoint != null &&
             (endpoint.source == ProxyEndpointSource.MANUAL || endpoint.source == ProxyEndpointSource.DEFAULT)
         ) {
@@ -529,7 +530,7 @@ class TunnelManager private constructor(context: Context) {
             val params = GitEndpointFetcher.Params(
                 repoUrl = repoUrl,
                 branch = credentialsStore.gitBranch()?.takeIf { it.isNotBlank() } ?: "main",
-                filePath = credentialsStore.gitFilePath()?.takeIf { it.isNotBlank() } ?: DEFAULT_GIT_FILE,
+                filePath = filePath,
                 privateKey = credentialsStore.gitPrivateKey()
             )
             val result = runCatching { gitFetcher.fetch(params) }
@@ -798,7 +799,6 @@ class TunnelManager private constructor(context: Context) {
         private const val CONFIG_ERROR_BACKOFF_MS = 10_000L
         private const val WAIT_ENDPOINT_BACKOFF_MS = 5_000L
         private const val MAX_STACKTRACE_CHARS = 4_096
-        private const val DEFAULT_GIT_FILE = "updated-proxy"
         private const val STALE_NTFY_THRESHOLD_MS = 30_000L
         private const val GIT_REFRESH_COOLDOWN_MS = 20_000L
         private const val LOCAL_BYPASS_FRESHNESS_MS = 60_000L

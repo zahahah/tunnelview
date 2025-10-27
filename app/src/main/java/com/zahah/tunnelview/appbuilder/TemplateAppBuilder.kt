@@ -214,9 +214,11 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
         val fallbackSshKey = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()
         val fallbackGitKey = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()
+        val fallbackLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty()
         val fallbackSettingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
         val host = request.defaultInternalHost
         val port = request.defaultInternalPort
+        val localPort = request.defaultLocalPort
         val sshUser = request.defaultSshUser
         val gitRepo = request.defaultGitRepoUrl
         val gitFile = request.defaultGitFilePath
@@ -231,6 +233,7 @@ class TemplateAppBuilder(private val context: Context) {
             gitFile == fallbackGitFile &&
             sshKey == fallbackSshKey &&
             gitKey == fallbackGitKey &&
+            localPort == fallbackLocalPort &&
             settingsPassword == fallbackSettingsPassword
         ) {
             return null
@@ -238,6 +241,7 @@ class TemplateAppBuilder(private val context: Context) {
         val json = JSONObject().apply {
             put("internalHost", host)
             put("internalPort", port)
+            put("localPort", localPort)
             put("sshUser", sshUser)
             put("gitRepoUrl", gitRepo)
             put("gitFilePath", gitFile)
@@ -602,6 +606,7 @@ data class AppBuildRequest(
     val packageName: String,
     val defaultInternalHost: String = BuildConfig.DEFAULT_INTERNAL_HOST.orEmpty(),
     val defaultInternalPort: String = BuildConfig.DEFAULT_INTERNAL_PORT.orEmpty(),
+    val defaultLocalPort: String = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty(),
     val defaultSshUser: String = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
     val defaultGitRepoUrl: String = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
     val defaultGitFilePath: String = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),

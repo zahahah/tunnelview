@@ -117,7 +117,7 @@ fun SettingsScreen(
     var accessKey by rememberSaveable { mutableStateOf("") }
     var gitRepoUrl by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
     var gitBranch by rememberSaveable { mutableStateOf("main") }
-    var gitFilePath by rememberSaveable { mutableStateOf(appDefaults.gitFilePath.ifBlank { "updated-proxy" }) }
+    var gitFilePath by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
     var gitPrivateKey by rememberSaveable { mutableStateOf(appDefaults.gitPrivateKey) }
 
     var sshHost by rememberSaveable { mutableStateOf("") }
@@ -150,11 +150,10 @@ fun SettingsScreen(
     var builderPackage by rememberSaveable { mutableStateOf("") }
     var builderDefaultHost by rememberSaveable { mutableStateOf(appDefaults.internalHost) }
     var builderDefaultPort by rememberSaveable { mutableStateOf(appDefaults.internalPort) }
+    var builderDefaultLocalPort by rememberSaveable { mutableStateOf(appDefaults.localPort) }
     var builderDefaultSshUser by rememberSaveable { mutableStateOf(appDefaults.sshUser) }
     var builderDefaultGitRepo by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
-    var builderDefaultGitFile by rememberSaveable {
-        mutableStateOf(appDefaults.gitFilePath.ifBlank { "updated-proxy" })
-    }
+    var builderDefaultGitFile by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
     var builderDefaultSshKey by rememberSaveable { mutableStateOf(appDefaults.sshPrivateKey) }
     var builderDefaultGitKey by rememberSaveable { mutableStateOf(appDefaults.gitPrivateKey) }
     var builderDefaultSettingsPassword by rememberSaveable { mutableStateOf(appDefaults.settingsPassword) }
@@ -170,6 +169,7 @@ fun SettingsScreen(
     var builderPrivateKeyPem by rememberSaveable { mutableStateOf("") }
     var builderCertificatePem by rememberSaveable { mutableStateOf("") }
     var builderPortError by remember { mutableStateOf<String?>(null) }
+    var builderLocalPortError by remember { mutableStateOf<String?>(null) }
 
     val iconPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) {
@@ -217,7 +217,7 @@ fun SettingsScreen(
         gitRepoUrl = credentialsStore.gitRepoUrl().orEmpty().ifBlank { defaultGitRepo }
         gitBranch = credentialsStore.gitBranch().orEmpty().ifBlank { "main" }
         gitFilePath = credentialsStore.gitFilePath().orEmpty()
-            .ifBlank { defaultGitFile.ifBlank { "updated-proxy" } }
+            .ifBlank { defaultGitFile }
         gitPrivateKey = credentialsStore.gitPrivateKey().orEmpty()
 
         sshHost = prefs.sshHost.orEmpty()
@@ -383,6 +383,7 @@ fun SettingsScreen(
         val trimmedPackage = builderPackage.trim()
         val trimmedDefaultHost = builderDefaultHost.trim()
         val trimmedDefaultPort = builderDefaultPort.trim()
+        val trimmedDefaultLocalPort = builderDefaultLocalPort.trim()
         val trimmedDefaultSshUser = builderDefaultSshUser.trim()
         val trimmedDefaultGitRepo = builderDefaultGitRepo.trim()
         val trimmedDefaultGitFile = builderDefaultGitFile.trim()
@@ -411,10 +412,19 @@ fun SettingsScreen(
             builderStatus = null
             return
         }
+        val localPortValue = trimmedDefaultLocalPort.toIntOrNull()
+        if (trimmedDefaultLocalPort.isNotEmpty() && (localPortValue == null || localPortValue !in 1..65535)) {
+            val portErrorMessage = context.getString(R.string.app_builder_default_port_error)
+            builderLocalPortError = portErrorMessage
+            builderError = portErrorMessage
+            builderStatus = null
+            return
+        }
         builderAppName = trimmedName
         builderPackage = trimmedPackage
         builderDefaultHost = trimmedDefaultHost
         builderDefaultPort = trimmedDefaultPort
+        builderDefaultLocalPort = trimmedDefaultLocalPort
         builderDefaultSshUser = trimmedDefaultSshUser
         builderDefaultGitRepo = trimmedDefaultGitRepo
         builderDefaultGitFile = trimmedDefaultGitFile
@@ -426,6 +436,7 @@ fun SettingsScreen(
         builderResult = null
         builderBusy = true
         builderPortError = null
+        builderLocalPortError = null
         scope.launch {
             runCatching {
                 appBuilder.build(
@@ -434,6 +445,7 @@ fun SettingsScreen(
                         packageName = trimmedPackage,
                         defaultInternalHost = trimmedDefaultHost,
                         defaultInternalPort = trimmedDefaultPort,
+                        defaultLocalPort = trimmedDefaultLocalPort,
                         defaultSshUser = trimmedDefaultSshUser,
                         defaultGitRepoUrl = trimmedDefaultGitRepo,
                         defaultGitFilePath = trimmedDefaultGitFile,
@@ -637,10 +649,12 @@ fun SettingsScreen(
             useCustomSigning = builderUseCustomSigning,
             defaultInternalHost = builderDefaultHost,
             defaultInternalPort = builderDefaultPort,
+            defaultLocalPort = builderDefaultLocalPort,
             defaultSshUser = builderDefaultSshUser,
             defaultGitRepoUrl = builderDefaultGitRepo,
             defaultGitFilePath = builderDefaultGitFile,
             defaultPortError = builderPortError,
+            defaultLocalPortError = builderLocalPortError,
             defaultSshKey = builderDefaultSshKey,
             defaultGitKey = builderDefaultGitKey,
             defaultSettingsPassword = builderDefaultSettingsPassword,
@@ -655,6 +669,10 @@ fun SettingsScreen(
             onDefaultPortChange = {
                 builderDefaultPort = it
                 builderPortError = null
+            },
+            onDefaultLocalPortChange = {
+                builderDefaultLocalPort = it
+                builderLocalPortError = null
             },
             onDefaultSshUserChange = { builderDefaultSshUser = it },
             onDefaultGitRepoChange = { builderDefaultGitRepo = it },
@@ -1446,10 +1464,12 @@ private fun AppBuilderPage(
     useCustomSigning: Boolean,
     defaultInternalHost: String,
     defaultInternalPort: String,
+    defaultLocalPort: String,
     defaultSshUser: String,
     defaultGitRepoUrl: String,
     defaultGitFilePath: String,
     defaultPortError: String?,
+    defaultLocalPortError: String?,
     defaultSshKey: String,
     defaultGitKey: String,
     defaultSettingsPassword: String,
@@ -1458,6 +1478,7 @@ private fun AppBuilderPage(
     onPackageChange: (String) -> Unit,
     onDefaultHostChange: (String) -> Unit,
     onDefaultPortChange: (String) -> Unit,
+    onDefaultLocalPortChange: (String) -> Unit,
     onDefaultSshUserChange: (String) -> Unit,
     onDefaultGitRepoChange: (String) -> Unit,
     onDefaultGitFileChange: (String) -> Unit,
@@ -1554,6 +1575,26 @@ private fun AppBuilderPage(
                 isError = defaultPortError != null,
                 supportingText = {
                     defaultPortError?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultLocalPort,
+                onValueChange = onDefaultLocalPortChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_local_port_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_local_port_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = defaultLocalPortError != null,
+                supportingText = {
+                    defaultLocalPortError?.let { error ->
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,

@@ -135,6 +135,8 @@
     <string name="app_builder_default_host_placeholder">e.g. 192.168.0.7</string>
     <string name="app_builder_default_port_label">Default internal port</string>
     <string name="app_builder_default_port_placeholder">e.g. 3000</string>
+    <string name="app_builder_default_local_port_label">Default local port</string>
+    <string name="app_builder_default_local_port_placeholder">e.g. 8090</string>
     <string name="app_builder_default_port_error">Enter a number between 1 and 65535 or leave the
         field blank.</string>
     <string name="app_builder_default_ssh_user_label">Default SSH user</string>
@@ -144,7 +146,7 @@
     <string name="app_builder_default_git_repo_label">Default Git fallback repo</string>
     <string name="app_builder_default_git_repo_placeholder">git@github.com:user/repo.git</string>
     <string name="app_builder_default_git_file_label">Default fallback file</string>
-    <string name="app_builder_default_git_file_placeholder">e.g. updated-proxy</string>
+    <string name="app_builder_default_git_file_placeholder">e.g. endpoints.json</string>
     <string name="app_builder_default_ssh_key_label">Default SSH private key</string>
     <string name="app_builder_default_ssh_key_placeholder">Paste PEM key used for the tunnel (optional)</string>
     <string name="app_builder_default_git_key_label">Default Git SSH private key</string>
@@ -159,7 +161,7 @@
     <string name="settings_git_branch_label">Branch</string>
     <string name="settings_git_branch_placeholder">main</string>
     <string name="settings_git_file_label">Repository file</string>
-    <string name="settings_git_file_placeholder">updated-proxy</string>
+    <string name="settings_git_file_placeholder">endpoints.json</string>
     <string name="settings_git_key_label">SSH private key (PEM)</string>
     <string name="settings_git_key_placeholder">Paste an RSA/Ed25519 key (optional)</string>
     <string name="settings_back">Back</string>

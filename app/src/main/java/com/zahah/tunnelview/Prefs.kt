@@ -44,7 +44,10 @@ class Prefs(ctx: Context) {
         }
 
     var localPort: Int
-        get() = sp.getInt("localPort", 8090)
+        get() {
+            val fallback = appDefaults.localPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: DEFAULT_LOCAL_PORT
+            return sp.getInt("localPort", fallback)
+        }
         set(v) = sp.edit { putInt("localPort", v) }
 
     // INTERNAL HOST/PORT (forward destination)
@@ -359,6 +362,7 @@ class Prefs(ctx: Context) {
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
         private const val MIN_TIMEOUT_SECONDS = 15
         private const val MAX_TIMEOUT_SECONDS = 30
+        private const val DEFAULT_LOCAL_PORT = 8090
         private const val DEFAULT_NTFY_URL = "https://ntfy.sh/s10e-server-ngrok/sse"
         private const val LEGACY_DEFAULT_NTFY_URL = "https://ntfy.sh/ntfy-update-from-server/sse"
         const val DEFAULT_APP_LANGUAGE = "en"

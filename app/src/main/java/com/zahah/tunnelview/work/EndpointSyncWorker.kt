@@ -87,10 +87,15 @@ class EndpointSyncWorker(
     }
 
     private suspend fun handleGitFallback(repoUrl: String): Result {
+        val filePath = credentials.gitFilePath()?.takeIf { it.isNotBlank() } ?: run {
+            val message = "Arquivo git não configurado"
+            repository.reportError(message)
+            return Result.failure(workDataOf(KEY_ERROR to message))
+        }
         val params = GitEndpointFetcher.Params(
             repoUrl = repoUrl,
             branch = credentials.gitBranch()?.takeIf { it.isNotBlank() } ?: "main",
-            filePath = credentials.gitFilePath()?.takeIf { it.isNotBlank() } ?: DEFAULT_GIT_FILE,
+            filePath = filePath,
             privateKey = credentials.gitPrivateKey()
         )
         return when (val result = gitFetcher.fetch(params)) {
@@ -134,7 +139,6 @@ class EndpointSyncWorker(
         private const val UNIQUE_PERIODIC = "proxy-endpoint-sync-periodic"
         private const val UNIQUE_IMMEDIATE = "proxy-endpoint-sync-once"
         private const val KEY_ERROR = "error"
-        private const val DEFAULT_GIT_FILE = "updated-proxy"
         private val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
