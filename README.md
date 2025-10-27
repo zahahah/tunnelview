@@ -1,6 +1,6 @@
-# TunnelView – Webpages with app experience
+# TunnelView – Webpages in app experience
 
-TunnelView is a SSH tunneling Webview Android app to open websites safely, even when the server only lives inside a VPN or LAN. It does this by establishing an SSH tunnel (via [SSHJ](https://github.com/hierynomus/sshj)), exposing the internal service on `127.0.0.1`, and presenting it inside a hardened WebView with offline snapshots, diagnostics, and an optional white‑label app builder.
+TunnelView is a SSH tunneling Webview Android app to access websites safely in a webview container, even when the server only lives inside a VPN or LAN. It does this by establishing an SSH tunnel (via [SSHJ](https://github.com/hierynomus/sshj)), exposing the internal service on `127.0.0.1`, and presenting it inside a hardened WebView with offline snapshots, diagnostics, and an optional white‑label app builder.
 
 ## Highlights
 
