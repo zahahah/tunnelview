@@ -61,6 +61,11 @@ class MainActivity : AppCompatActivity() {
         coordinator.onStart()
     }
 
+    override fun onResume() {
+        super.onResume()
+        coordinator.onResume()
+    }
+
     override fun onStop() {
         if (::coordinator.isInitialized) {
             coordinator.onStop()

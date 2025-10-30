@@ -7,8 +7,10 @@ import org.json.JSONObject
 import com.zahah.tunnelview.BuildConfig
 
 data class AppDefaults(
-    val internalHost: String,
-    val internalPort: String,
+    val remoteInternalHost: String,
+    val remoteInternalPort: String,
+    val directHost: String,
+    val directPort: String,
     val localPort: String,
     val sshUser: String,
     val gitRepoUrl: String,
@@ -39,9 +41,17 @@ object AppDefaultsProvider {
                 BufferedReader(InputStreamReader(stream)).use { reader ->
                     val json = JSONObject(reader.readText())
                     val base = fallback()
+                    val legacyInternalHost = json.optString("internalHost")
+                    val legacyInternalPort = json.optString("internalPort")
                     AppDefaults(
-                        internalHost = json.optString("internalHost", base.internalHost).ifBlank { base.internalHost },
-                        internalPort = json.optString("internalPort", base.internalPort).ifBlank { base.internalPort },
+                        remoteInternalHost = json.optString("remoteInternalHost", legacyInternalHost)
+                            .ifBlank { legacyInternalHost }
+                            .ifBlank { base.remoteInternalHost },
+                        remoteInternalPort = json.optString("remoteInternalPort", legacyInternalPort)
+                            .ifBlank { legacyInternalPort }
+                            .ifBlank { base.remoteInternalPort },
+                        directHost = json.optString("directHost", base.directHost).ifBlank { base.directHost },
+                        directPort = json.optString("directPort", base.directPort).ifBlank { base.directPort },
                         localPort = json.optString("localPort", base.localPort).ifBlank { base.localPort },
                         sshUser = json.optString("sshUser", base.sshUser).ifBlank { base.sshUser },
                         gitRepoUrl = json.optString("gitRepoUrl", base.gitRepoUrl).ifBlank { base.gitRepoUrl },
@@ -61,8 +71,10 @@ object AppDefaultsProvider {
         val decodeMultiline: (String) -> String = { it.replace("\\n", "\n") }
         val defaultLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty().ifBlank { "8090" }
         return AppDefaults(
-            internalHost = BuildConfig.DEFAULT_INTERNAL_HOST.orEmpty(),
-            internalPort = BuildConfig.DEFAULT_INTERNAL_PORT.orEmpty(),
+            remoteInternalHost = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty(),
+            remoteInternalPort = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty(),
+            directHost = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty(),
+            directPort = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty(),
             localPort = defaultLocalPort,
             sshUser = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
             gitRepoUrl = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),

@@ -11,8 +11,8 @@
 
     <string name="hint_ntfy_ws">ntfy SSE URL (ex: https://ntfy.sh/seu-topico/sse)</string>
     <string name="hint_local_port">Porta do túnel local (ex: 8090)</string>
-    <string name="hint_remote_host">Host interno (via túnel, ex: 192.168.0.7)</string>
-    <string name="hint_remote_port">Porta interna (via túnel, ex: 3000)</string>
+    <string name="hint_remote_host">Host interno remoto (via túnel, ex: 192.168.0.7)</string>
+    <string name="hint_remote_port">Porta interna remota (via túnel, ex: 3000)</string>
     <string name="label_local_section">Acesso por conexão direta (opcional)</string>
     <string name="hint_local_lan_host">Host conexão direta (ex: 192.168.1.3)</string>
     <string name="hint_local_lan_port">Porta conexão direta (ex: 8080)</string>
@@ -20,7 +20,7 @@
     <string name="hint_fallback_endpoint_url">(Opcional) URL de fallback com host:porta (texto ou
         JSON)</string>
     <string name="hint_ssh_private_key">(Opcional) Cole aqui uma chave privada PEM alternativa</string>
-    <string name="label_use_manual">Escolher host interno e porta manualmente</string>
+    <string name="label_use_manual">Escolher host interno remoto e porta manualmente</string>
     <string name="label_cache_last_page">Exibir versão anterior do website quando offline</string>
     <string name="label_persistent_notification">Mostrar notificação persistente do túnel</string>
     <string name="label_connection_debug">Habilitar logs detalhados de conexão</string>
@@ -80,8 +80,8 @@
     <string name="settings_section_ssh_title">Conexão SSH</string>
     <string name="settings_section_ssh_description">Configure host, porta, usuário e chaves do
         túnel.</string>
-    <string name="settings_section_network_title">Rede e host interno</string>
-    <string name="settings_section_network_description">Ajuste o host interno, a porta local e
+    <string name="settings_section_network_title">Rede e host interno remoto</string>
+    <string name="settings_section_network_description">Ajuste o host interno remoto, a porta local e
         configure o acesso direto.</string>
     <string name="direct_access_button_label">Acessar por conexão direta</string>
     <string name="direct_access_info">A página será acessada sem túnel. Caso habilitado e os campos
@@ -135,9 +135,9 @@
     <string name="app_builder_defaults_title">Valores padrão da conexão</string>
     <string name="app_builder_defaults_description">Esses valores são gravados no APK gerado e
         preenchem o formulário do túnel.</string>
-    <string name="app_builder_default_host_label">Host interno padrão</string>
+    <string name="app_builder_default_host_label">Host interno remoto padrão</string>
     <string name="app_builder_default_host_placeholder">ex.: 192.168.0.7</string>
-    <string name="app_builder_default_port_label">Porta interna padrão</string>
+    <string name="app_builder_default_port_label">Porta interna remota padrão</string>
     <string name="app_builder_default_port_placeholder">ex.: 3000</string>
     <string name="app_builder_default_local_port_label">Porta local padrão</string>
     <string name="app_builder_default_local_port_placeholder">ex.: 8090</string>

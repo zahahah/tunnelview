@@ -215,8 +215,10 @@ class TemplateAppBuilder(private val context: Context) {
     }
 
     private fun buildAppDefaultsPayload(request: AppBuildRequest): ByteArray? {
-        val fallbackHost = BuildConfig.DEFAULT_INTERNAL_HOST.orEmpty()
-        val fallbackPort = BuildConfig.DEFAULT_INTERNAL_PORT.orEmpty()
+        val fallbackHost = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty()
+        val fallbackPort = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty()
+        val fallbackDirectHost = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty()
+        val fallbackDirectPort = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty()
         val fallbackSshUser = BuildConfig.DEFAULT_SSH_USER.orEmpty()
         val fallbackGitRepo = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty()
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
@@ -225,8 +227,10 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty()
         val fallbackSettingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty()
         val fallbackBuilderEnabled = true
-        val host = request.defaultInternalHost
-        val port = request.defaultInternalPort
+        val host = request.defaultRemoteInternalHost
+        val port = request.defaultRemoteInternalPort
+        val directHost = request.defaultDirectHost
+        val directPort = request.defaultDirectPort
         val localPort = request.defaultLocalPort
         val sshUser = request.defaultSshUser
         val gitRepo = request.defaultGitRepoUrl
@@ -238,6 +242,8 @@ class TemplateAppBuilder(private val context: Context) {
         if (
             host == fallbackHost &&
             port == fallbackPort &&
+            directHost == fallbackDirectHost &&
+            directPort == fallbackDirectPort &&
             sshUser == fallbackSshUser &&
             gitRepo == fallbackGitRepo &&
             gitFile == fallbackGitFile &&
@@ -250,8 +256,13 @@ class TemplateAppBuilder(private val context: Context) {
             return null
         }
         val json = JSONObject().apply {
+            put("remoteInternalHost", host)
+            put("remoteInternalPort", port)
+            // Legacy keys kept for backwards compatibility with older runtime builds
             put("internalHost", host)
             put("internalPort", port)
+            put("directHost", directHost)
+            put("directPort", directPort)
             put("localPort", localPort)
             put("sshUser", sshUser)
             put("gitRepoUrl", gitRepo)
@@ -622,8 +633,10 @@ class TemplateAppBuilder(private val context: Context) {
 data class AppBuildRequest(
     val appName: String,
     val packageName: String,
-    val defaultInternalHost: String = BuildConfig.DEFAULT_INTERNAL_HOST.orEmpty(),
-    val defaultInternalPort: String = BuildConfig.DEFAULT_INTERNAL_PORT.orEmpty(),
+    val defaultRemoteInternalHost: String = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty(),
+    val defaultRemoteInternalPort: String = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty(),
+    val defaultDirectHost: String = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty(),
+    val defaultDirectPort: String = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty(),
     val defaultLocalPort: String = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty(),
     val defaultSshUser: String = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
     val defaultGitRepoUrl: String = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),

@@ -11,15 +11,15 @@
 
     <string name="hint_ntfy_ws">ntfy SSE URL (e.g. https://ntfy.sh/your-topic/sse)</string>
     <string name="hint_local_port">Local tunnel port (e.g. 8090)</string>
-    <string name="hint_remote_host">Internal host (through the tunnel, e.g. 192.168.0.7)</string>
-    <string name="hint_remote_port">Internal port (through the tunnel, e.g. 3000)</string>
+    <string name="hint_remote_host">Remote internal host (through the tunnel, e.g. 192.168.0.7)</string>
+    <string name="hint_remote_port">Remote internal port (through the tunnel, e.g. 3000)</string>
     <string name="label_local_section">Access through direct connection</string>
     <string name="hint_local_lan_host">Direct host (e.g. 192.168.1.3)</string>
     <string name="hint_local_lan_port">Direct port (e.g. 8080)</string>
     <string name="hint_ssh_user">SSH user (e.g. appuser)</string>
     <string name="hint_fallback_endpoint_url">(Optional) Fallback URL with host:port (text or JSON)</string>
     <string name="hint_ssh_private_key">(Optional) Paste an alternate PEM private key</string>
-    <string name="label_use_manual">Select internal host and port manually</string>
+    <string name="label_use_manual">Select remote internal host and port manually</string>
     <string name="label_cache_last_page">Show website previous version when offline</string>
     <string name="label_persistent_notification">Show persistent tunnel notification</string>
     <string name="label_connection_debug">Enable verbose connection logs</string>
@@ -76,8 +76,8 @@
     <string name="settings_remote_updates_description">Manage ntfy topics and automatic fallbacks.</string>
     <string name="settings_section_ssh_title">SSH connection</string>
     <string name="settings_section_ssh_description">Configure tunnel host, port, user, and keys.</string>
-    <string name="settings_section_network_title">Network and internal host</string>
-    <string name="settings_section_network_description">Adjust the internal host, local port, and
+    <string name="settings_section_network_title">Network and remote internal host</string>
+    <string name="settings_section_network_description">Adjust the remote internal host, local port, and
         direct access.</string>
     <string name="direct_access_button_label">Access via direct connection</string>
     <string name="direct_access_info">The page will be opened without the tunnel. If enabled and
@@ -133,10 +133,14 @@
     <string name="app_builder_defaults_title">Default connection values</string>
     <string name="app_builder_defaults_description">These defaults are written into the generated
         APK and prefill the tunnel configuration.</string>
-    <string name="app_builder_default_host_label">Default internal host</string>
+    <string name="app_builder_default_host_label">Default remote internal host</string>
     <string name="app_builder_default_host_placeholder">e.g. 192.168.0.7</string>
-    <string name="app_builder_default_port_label">Default internal port</string>
+    <string name="app_builder_default_port_label">Default remote internal port</string>
     <string name="app_builder_default_port_placeholder">e.g. 3000</string>
+    <string name="app_builder_default_direct_host_label">Default direct host</string>
+    <string name="app_builder_default_direct_host_placeholder">e.g. 192.168.0.7</string>
+    <string name="app_builder_default_direct_port_label">Default direct port</string>
+    <string name="app_builder_default_direct_port_placeholder">e.g. 3000</string>
     <string name="app_builder_default_local_port_label">Default local port</string>
     <string name="app_builder_default_local_port_placeholder">e.g. 8090</string>
     <string name="app_builder_default_port_error">Enter a number between 1 and 65535 or leave the

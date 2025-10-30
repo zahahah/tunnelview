@@ -163,8 +163,10 @@ fun SettingsScreen(
     val appBuilder = remember { TemplateAppBuilder(context) }
     var builderAppName by rememberSaveable { mutableStateOf("") }
     var builderPackage by rememberSaveable { mutableStateOf("") }
-    var builderDefaultHost by rememberSaveable { mutableStateOf(appDefaults.internalHost) }
-    var builderDefaultPort by rememberSaveable { mutableStateOf(appDefaults.internalPort) }
+    var builderRemoteInternalHost by rememberSaveable { mutableStateOf(appDefaults.remoteInternalHost) }
+    var builderRemoteInternalPort by rememberSaveable { mutableStateOf(appDefaults.remoteInternalPort) }
+    var builderDefaultDirectHost by rememberSaveable { mutableStateOf(appDefaults.directHost) }
+    var builderDefaultDirectPort by rememberSaveable { mutableStateOf(appDefaults.directPort) }
     var builderDefaultLocalPort by rememberSaveable { mutableStateOf(appDefaults.localPort) }
     var builderDefaultSshUser by rememberSaveable { mutableStateOf(appDefaults.sshUser) }
     var builderDefaultGitRepo by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
@@ -184,6 +186,7 @@ fun SettingsScreen(
     var builderPrivateKeyPem by rememberSaveable { mutableStateOf("") }
     var builderCertificatePem by rememberSaveable { mutableStateOf("") }
     var builderPortError by remember { mutableStateOf<String?>(null) }
+    var builderDirectPortError by remember { mutableStateOf<String?>(null) }
     var builderLocalPortError by remember { mutableStateOf<String?>(null) }
     var includeBaseTemplate by rememberSaveable { mutableStateOf(builderEnabled) }
 
@@ -253,9 +256,21 @@ fun SettingsScreen(
         localPort = prefs.localPort.toString()
         remoteHost = prefs.remoteHost
         remotePort = prefs.remotePort.takeIf { it > 0 }?.toString().orEmpty()
-        val (lanHost, lanPort) = parseLocalEndpoint(prefs.localIpEndpointRaw())
-        localLanHost = lanHost.orEmpty()
-        localLanPort = lanPort.orEmpty()
+        val fallbackDirectHost = appDefaults.directHost
+        val fallbackDirectPort = appDefaults.directPort
+        val resolvedLocalEndpoint = prefs.localIpEndpoint
+            ?: buildLocalEndpoint(fallbackDirectHost.trim(), fallbackDirectPort.trim())
+        val (lanHost, lanPort) = parseLocalEndpoint(resolvedLocalEndpoint)
+        localLanHost = when {
+            !lanHost.isNullOrBlank() -> lanHost
+            fallbackDirectHost.isNotBlank() -> fallbackDirectHost
+            else -> ""
+        }
+        localLanPort = when {
+            !lanPort.isNullOrBlank() -> lanPort
+            fallbackDirectPort.isNotBlank() -> fallbackDirectPort
+            else -> ""
+        }
 
         cacheLastPage = prefs.cacheLastPage
         persistentNotification = prefs.persistentNotificationEnabled
@@ -406,8 +421,10 @@ fun SettingsScreen(
     fun triggerAppBuild() {
         val trimmedName = builderAppName.trim()
         val trimmedPackage = builderPackage.trim()
-        val trimmedDefaultHost = builderDefaultHost.trim()
-        val trimmedDefaultPort = builderDefaultPort.trim()
+        val trimmedRemoteInternalHost = builderRemoteInternalHost.trim()
+        val trimmedRemoteInternalPort = builderRemoteInternalPort.trim()
+        val trimmedDefaultDirectHost = builderDefaultDirectHost.trim()
+        val trimmedDefaultDirectPort = builderDefaultDirectPort.trim()
         val trimmedDefaultLocalPort = builderDefaultLocalPort.trim()
         val trimmedDefaultSshUser = builderDefaultSshUser.trim()
         val trimmedDefaultGitRepo = builderDefaultGitRepo.trim()
@@ -429,10 +446,18 @@ fun SettingsScreen(
                 return
             }
         }
-        val portValue = trimmedDefaultPort.toIntOrNull()
-        if (trimmedDefaultPort.isNotEmpty() && (portValue == null || portValue !in 1..65535)) {
+        val portValue = trimmedRemoteInternalPort.toIntOrNull()
+        if (trimmedRemoteInternalPort.isNotEmpty() && (portValue == null || portValue !in 1..65535)) {
             val portErrorMessage = context.getString(R.string.app_builder_default_port_error)
             builderPortError = portErrorMessage
+            builderError = portErrorMessage
+            builderStatus = null
+            return
+        }
+        val directPortValue = trimmedDefaultDirectPort.toIntOrNull()
+        if (trimmedDefaultDirectPort.isNotEmpty() && (directPortValue == null || directPortValue !in 1..65535)) {
+            val portErrorMessage = context.getString(R.string.app_builder_default_port_error)
+            builderDirectPortError = portErrorMessage
             builderError = portErrorMessage
             builderStatus = null
             return
@@ -447,8 +472,10 @@ fun SettingsScreen(
         }
         builderAppName = trimmedName
         builderPackage = trimmedPackage
-        builderDefaultHost = trimmedDefaultHost
-        builderDefaultPort = trimmedDefaultPort
+        builderRemoteInternalHost = trimmedRemoteInternalHost
+        builderRemoteInternalPort = trimmedRemoteInternalPort
+        builderDefaultDirectHost = trimmedDefaultDirectHost
+        builderDefaultDirectPort = trimmedDefaultDirectPort
         builderDefaultLocalPort = trimmedDefaultLocalPort
         builderDefaultSshUser = trimmedDefaultSshUser
         builderDefaultGitRepo = trimmedDefaultGitRepo
@@ -461,6 +488,7 @@ fun SettingsScreen(
         builderResult = null
         builderBusy = true
         builderPortError = null
+        builderDirectPortError = null
         builderLocalPortError = null
         scope.launch {
             runCatching {
@@ -468,8 +496,10 @@ fun SettingsScreen(
                     AppBuildRequest(
                         appName = trimmedName,
                         packageName = trimmedPackage,
-                        defaultInternalHost = trimmedDefaultHost,
-                        defaultInternalPort = trimmedDefaultPort,
+                        defaultRemoteInternalHost = trimmedRemoteInternalHost,
+                        defaultRemoteInternalPort = trimmedRemoteInternalPort,
+                        defaultDirectHost = trimmedDefaultDirectHost,
+                        defaultDirectPort = trimmedDefaultDirectPort,
                         defaultLocalPort = trimmedDefaultLocalPort,
                         defaultSshUser = trimmedDefaultSshUser,
                         defaultGitRepoUrl = trimmedDefaultGitRepo,
@@ -721,13 +751,16 @@ fun SettingsScreen(
                     selectedIconName = builderIconName,
                     useCustomSigning = builderUseCustomSigning,
                     includeBaseTemplate = includeBaseTemplate,
-                    defaultInternalHost = builderDefaultHost,
-                    defaultInternalPort = builderDefaultPort,
+                    defaultRemoteInternalHost = builderRemoteInternalHost,
+                    defaultRemoteInternalPort = builderRemoteInternalPort,
+                    defaultDirectHost = builderDefaultDirectHost,
+                    defaultDirectPort = builderDefaultDirectPort,
                     defaultLocalPort = builderDefaultLocalPort,
                     defaultSshUser = builderDefaultSshUser,
                     defaultGitRepoUrl = builderDefaultGitRepo,
                     defaultGitFilePath = builderDefaultGitFile,
                     defaultPortError = builderPortError,
+                    defaultDirectPortError = builderDirectPortError,
                     defaultLocalPortError = builderLocalPortError,
                     defaultSshKey = builderDefaultSshKey,
                     defaultGitKey = builderDefaultGitKey,
@@ -739,10 +772,15 @@ fun SettingsScreen(
                     },
                     onAppNameChange = { builderAppName = it },
                     onPackageChange = { builderPackage = it },
-                    onDefaultHostChange = { builderDefaultHost = it },
+                    onDefaultHostChange = { builderRemoteInternalHost = it },
                     onDefaultPortChange = {
-                        builderDefaultPort = it
+                        builderRemoteInternalPort = it
                         builderPortError = null
+                    },
+                    onDefaultDirectHostChange = { builderDefaultDirectHost = it },
+                    onDefaultDirectPortChange = {
+                        builderDefaultDirectPort = it
+                        builderDirectPortError = null
                     },
                     onDefaultLocalPortChange = {
                         builderDefaultLocalPort = it
@@ -1638,13 +1676,16 @@ private fun AppBuilderPage(
     selectedIconName: String?,
     useCustomSigning: Boolean,
     includeBaseTemplate: Boolean,
-    defaultInternalHost: String,
-    defaultInternalPort: String,
+    defaultRemoteInternalHost: String,
+    defaultRemoteInternalPort: String,
+    defaultDirectHost: String,
+    defaultDirectPort: String,
     defaultLocalPort: String,
     defaultSshUser: String,
     defaultGitRepoUrl: String,
     defaultGitFilePath: String,
     defaultPortError: String?,
+    defaultDirectPortError: String?,
     defaultLocalPortError: String?,
     defaultSshKey: String,
     defaultGitKey: String,
@@ -1654,6 +1695,8 @@ private fun AppBuilderPage(
     onPackageChange: (String) -> Unit,
     onDefaultHostChange: (String) -> Unit,
     onDefaultPortChange: (String) -> Unit,
+    onDefaultDirectHostChange: (String) -> Unit,
+    onDefaultDirectPortChange: (String) -> Unit,
     onDefaultLocalPortChange: (String) -> Unit,
     onDefaultSshUserChange: (String) -> Unit,
     onDefaultGitRepoChange: (String) -> Unit,
@@ -1759,7 +1802,7 @@ private fun AppBuilderPage(
             )
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
-                value = defaultInternalHost,
+                value = defaultRemoteInternalHost,
                 onValueChange = onDefaultHostChange,
                 label = { Text(text = stringResource(id = R.string.app_builder_default_host_label)) },
                 placeholder = { Text(text = stringResource(id = R.string.app_builder_default_host_placeholder)) },
@@ -1769,7 +1812,7 @@ private fun AppBuilderPage(
             )
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
-                value = defaultInternalPort,
+                value = defaultRemoteInternalPort,
                 onValueChange = onDefaultPortChange,
                 label = { Text(text = stringResource(id = R.string.app_builder_default_port_label)) },
                 placeholder = { Text(text = stringResource(id = R.string.app_builder_default_port_placeholder)) },
@@ -1779,6 +1822,36 @@ private fun AppBuilderPage(
                 isError = defaultPortError != null,
                 supportingText = {
                     defaultPortError?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultDirectHost,
+                onValueChange = onDefaultDirectHostChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_direct_host_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_direct_host_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultDirectPort,
+                onValueChange = onDefaultDirectPortChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_direct_port_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_direct_port_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = defaultDirectPortError != null,
+                supportingText = {
+                    defaultDirectPortError?.let { error ->
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,

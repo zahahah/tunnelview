@@ -43,8 +43,10 @@ android {
         versionCode 1
         versionName "1.0.0"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField "String", "DEFAULT_INTERNAL_HOST", quoteString(envValue("DEFAULT_INTERNAL_HOST"))
-        buildConfigField "String", "DEFAULT_INTERNAL_PORT", quoteString(envValue("DEFAULT_INTERNAL_PORT"))
+        buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_HOST", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_HOST"))
+        buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_PORT", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_PORT"))
+        buildConfigField "String", "DEFAULT_DIRECT_HOST", quoteString(envValue("DEFAULT_DIRECT_HOST"))
+        buildConfigField "String", "DEFAULT_DIRECT_PORT", quoteString(envValue("DEFAULT_DIRECT_PORT"))
         buildConfigField "String", "DEFAULT_LOCAL_PORT", quoteString(envValue("DEFAULT_LOCAL_PORT"))
         buildConfigField "String", "DEFAULT_SSH_USER", quoteString(envValue("DEFAULT_SSH_USER"))
         buildConfigField "String", "DEFAULT_GIT_REPO_URL", quoteString(envValue("DEFAULT_GIT_REPO_URL"))

@@ -167,6 +167,11 @@ class MainCoordinator(
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var legacyConnectivityRegistered = false
     private var lastKnownNetworkAvailable: Boolean? = null
+    private var resumeConnectionOnForeground = false
+    private var resumeConnectionForce = false
+    private var resumeMonitorOnForeground = false
+    private var isForeground = false
+    private var keepWebViewVisibleDuringLoading = false
     private val currentTunnelState: TunnelManager.State
         get() = tunnelManager.state.value
 
@@ -190,9 +195,12 @@ class MainCoordinator(
         val hideTap = toolbarVisible &&
             (view === appBar || view === toolbar) &&
             event.y <= appBar.height
-        val revealTap = !toolbarVisible && isTapWithinToolbarRevealZone(view, event.y)
-        val showEligible = !toolbarVisible &&
-            (progress.isVisible || showingCachedSnapshot || revealTap)
+        val allowGlobalReveal = !toolbarVisible && shouldAllowGlobalRevealTap()
+        val revealTap = !toolbarVisible &&
+            !allowGlobalReveal &&
+            isRevealSurface(view) &&
+            isTapWithinToolbarRevealZone(event.rawY)
+        val showEligible = !toolbarVisible && (allowGlobalReveal || revealTap)
         val target = when {
             hideTap -> ToggleTarget.HIDE
             showEligible -> ToggleTarget.SHOW
@@ -206,13 +214,19 @@ class MainCoordinator(
         false
     }
 
-    private fun isTapWithinToolbarRevealZone(view: View, eventY: Float): Boolean {
-        if (view === appBar || view === toolbar) return true
+    private fun shouldAllowGlobalRevealTap(): Boolean =
+        progress.isVisible || tunnelErrorContainer.isVisible || showingCachedSnapshot
+
+    private fun isRevealSurface(view: View): Boolean =
+        view === appBar || view === toolbar || view === rootView || view === contentContainer
+
+    private fun isTapWithinToolbarRevealZone(rawY: Float): Boolean {
+        if (toolbarVisible && rawY <= (statusBarInset + appBar.height)) return true
         val defaultHeight = (56 * resources.displayMetrics.density).toInt()
         val toolbarHeight = if (appBar.height > 0) appBar.height else defaultHeight
-        val revealThreshold = (statusBarInset + toolbarHeight).coerceAtLeast(collapsedMargin)
+        val revealThreshold = statusBarInset + toolbarHeight
         if (revealThreshold <= 0) return false
-        return eventY <= revealThreshold
+        return rawY <= revealThreshold
     }
 
     private val http: OkHttpClient by lazy {
@@ -283,6 +297,7 @@ class MainCoordinator(
     }
 
     fun onStart() {
+        isForeground = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ensurePostNotificationsThenStart()
         } else {
@@ -310,9 +325,17 @@ class MainCoordinator(
                 showContent()
             }
         }, 400L)
+        resumeConnectionFlow()
+    }
+
+    fun onResume() {
+        isForeground = true
+        resumeConnectionFlow()
     }
 
     fun onStop() {
+        isForeground = false
+        pauseConnectionFlow()
         stopNtfyUpdates()
         EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
     }
@@ -1207,7 +1230,52 @@ class MainCoordinator(
         fallbackHandler.postDelayed(runnable, delayMs)
     }
 
-    private fun startConnectionLoop(force: Boolean) {
+    private fun pauseConnectionFlow() {
+        if (webView.isVisible) {
+            keepWebViewVisibleDuringLoading = true
+        }
+        if (connectionJob?.isActive == true) {
+            resumeConnectionOnForeground = true
+            resumeConnectionForce = true
+        }
+        connectionJob?.cancel()
+        connectionJob = null
+
+        if (monitorJob?.isActive == true) {
+            resumeMonitorOnForeground = true
+        }
+        monitorJob?.cancel()
+        monitorJob = null
+    }
+
+    private fun resumeConnectionFlow() {
+        if (!isForeground) return
+        when {
+            resumeConnectionOnForeground -> {
+                val force = resumeConnectionForce
+                val keepVisible = keepWebViewVisibleDuringLoading
+                resumeConnectionOnForeground = false
+                resumeConnectionForce = false
+                resumeMonitorOnForeground = false
+                keepWebViewVisibleDuringLoading = false
+                startConnectionLoop(force = force, keepWebVisible = keepVisible)
+            }
+
+            resumeMonitorOnForeground -> {
+                resumeMonitorOnForeground = false
+                keepWebViewVisibleDuringLoading = false
+                startConnectionMonitor()
+            }
+        }
+    }
+
+    private fun startConnectionLoop(force: Boolean, keepWebVisible: Boolean = false) {
+        if (!isForeground) {
+            resumeConnectionOnForeground = true
+            resumeConnectionForce = resumeConnectionForce || force
+            keepWebViewVisibleDuringLoading = keepWebViewVisibleDuringLoading || keepWebVisible
+            return
+        }
         monitorJob?.cancel()
         connectionJob?.cancel()
         if (!showingCachedSnapshot && prefs.cacheLastPage && !isNetworkConnected()) {
@@ -1222,10 +1290,20 @@ class MainCoordinator(
             if (showingCachedSnapshot) {
                 progress.isVisible = false
             } else {
-                showLoading()
+                if (keepWebVisible) {
+                    progress.isVisible = false
+                    if (!webView.isVisible) {
+                        webView.isVisible = true
+                    }
+                } else {
+                    showLoading()
+                }
             }
             var nextForce = force
+            var keepVisibleNext = keepWebVisible
             while (isActive) {
+                val keepVisibleForAttempt = keepVisibleNext
+                keepVisibleNext = false
                 if (showingCachedSnapshot) {
                     val target = snapshotRetryTarget
                     logConnection(
@@ -1275,7 +1353,7 @@ class MainCoordinator(
                 ) { "Verificação direta -> $directAvailable (force=$nextForce)" }
                 if (directAvailable) {
                     resetReconnectState()
-                    loadTarget(LoadTarget.DIRECT, nextForce)
+                    loadTarget(LoadTarget.DIRECT, nextForce, keepWebVisible = keepVisibleForAttempt)
                     startConnectionMonitor()
                     return@launch
                 } else {
@@ -1300,7 +1378,7 @@ class MainCoordinator(
                 if (tunnelAvailable) {
                     tunnelAttempted = true
                     resetReconnectState()
-                    loadTarget(LoadTarget.TUNNEL, true)
+                    loadTarget(LoadTarget.TUNNEL, true, keepWebVisible = keepVisibleForAttempt)
                     startConnectionMonitor()
                     return@launch
                 } else {
@@ -1323,6 +1401,10 @@ class MainCoordinator(
     }
 
     private fun startConnectionMonitor() {
+        if (!isForeground) {
+            resumeMonitorOnForeground = true
+            return
+        }
         monitorJob?.cancel()
         monitorJob = lifecycleScope.launch {
             logConnection(
@@ -1438,13 +1520,13 @@ class MainCoordinator(
         }
     }
 
-    private fun loadTarget(target: LoadTarget, force: Boolean) {
+    private fun loadTarget(target: LoadTarget, force: Boolean, keepWebVisible: Boolean) {
         if (target == LoadTarget.DIRECT && !isDirectConfigured()) {
             logConnection(
                 android.util.Log.DEBUG,
                 "WEBNAV"
             ) { "Conexão direta não configurada; carregando túnel" }
-            loadTarget(LoadTarget.TUNNEL, force)
+            loadTarget(LoadTarget.TUNNEL, force, keepWebVisible)
             return
         }
         currentTarget = target
@@ -1455,11 +1537,18 @@ class MainCoordinator(
             cancelDirectFallback()
         }
         val wasShowingSnapshot = showingCachedSnapshot
-        keepContentVisibleDuringLoad = wasShowingSnapshot && prefs.cacheLastPage && !force
+        keepContentVisibleDuringLoad = when {
+            wasShowingSnapshot && prefs.cacheLastPage -> true
+            keepWebVisible -> true
+            else -> false
+        }
         if (keepContentVisibleDuringLoad) {
-            progress.isVisible = true
+            progress.isVisible = !keepWebVisible
+            if (keepWebVisible && !webView.isVisible) {
+                webView.isVisible = true
+            }
         } else {
-            showLoading()
+            showLoading(keepWebVisible = keepWebVisible)
         }
         val preferSnapshotUrl = wasShowingSnapshot
         val desiredUrl = desiredUrlFor(target, preferSnapshotUrl)
@@ -1893,9 +1982,13 @@ class MainCoordinator(
         else -> "text/html"
     }
 
-    private fun showLoading() {
+    private fun showLoading(keepWebVisible: Boolean = false) {
         progress.isVisible = true
-        webView.isVisible = false
+        if (!keepWebVisible) {
+            webView.isVisible = false
+        } else if (!webView.isVisible) {
+            webView.isVisible = true
+        }
         if (!toolbarPinnedByUser) {
             hideToolbar()
         }

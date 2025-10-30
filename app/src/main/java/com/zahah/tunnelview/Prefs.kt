@@ -51,9 +51,9 @@ class Prefs(ctx: Context) {
         }
         set(v) = sp.edit { putInt("localPort", v) }
 
-    // INTERNAL HOST/PORT (forward destination)
+    // REMOTE INTERNAL HOST/PORT (forward destination)
     var remoteHost: String
-        get() = sp.getString("remoteHost", appDefaults.internalHost.ifBlank { "" })!!
+        get() = sp.getString("remoteHost", appDefaults.remoteInternalHost.ifBlank { "" })!!
         set(value) = sp.edit {
             val normalized = value.trim()
             if (normalized.isEmpty()) {
@@ -68,7 +68,7 @@ class Prefs(ctx: Context) {
             if (sp.contains("remotePort")) {
                 return sp.getInt("remotePort", 0)
             }
-            return appDefaults.internalPort.toIntOrNull() ?: 0
+            return appDefaults.remoteInternalPort.toIntOrNull() ?: 0
         }
         set(value) = sp.edit {
             if (value <= 0) {
@@ -218,9 +218,20 @@ class Prefs(ctx: Context) {
 
     var localIpEndpoint: String?
         get() {
-            return sp.getString("localIpEndpoint", null)
+            val stored = sp.getString("localIpEndpoint", null)
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
+            if (stored != null) {
+                return stored
+            }
+            val fallbackHost = appDefaults.directHost.trim().takeIf { it.isNotEmpty() } ?: return null
+            val fallbackPortRaw = appDefaults.directPort.trim().takeIf { it.isNotEmpty() }
+            val fallbackPort = fallbackPortRaw?.toIntOrNull()
+            return if (fallbackPort != null) {
+                "$fallbackHost:$fallbackPort"
+            } else {
+                fallbackHost
+            }
         }
         set(v) {
             val value = v?.trim()
