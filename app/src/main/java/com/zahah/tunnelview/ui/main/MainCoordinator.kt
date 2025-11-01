@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
@@ -141,6 +142,7 @@ class MainCoordinator(
     private var lastTapAt = 0L
     private var lastTapTarget: ToggleTarget? = null
     private var lastHttpProbeAt = 0L
+    private var lastDirectProbeAt = 0L
     private val doubleTapTimeout by lazy { ViewConfiguration.getDoubleTapTimeout().toLong() }
     private var statusBarInset = 0
     private var systemBottomInset = 0
@@ -160,6 +162,7 @@ class MainCoordinator(
     private val connectionRetryDelayMs = 3_000L
     private val monitorIntervalMs = 5_000L
     private val httpProbeIntervalWhileOnTunnelMs = TimeUnit.SECONDS.toMillis(10)
+    private val directProbeIntervalMs = TimeUnit.SECONDS.toMillis(10)
     private var shouldSnapshotCurrentPage = false
     private var pendingSnapshot = false
     private var lastSnapshotUrl: String? = null
@@ -181,8 +184,21 @@ class MainCoordinator(
     private var resumeMonitorOnForeground = false
     private var isForeground = false
     private var keepWebViewVisibleDuringLoading = false
+    private var pendingTunnelNavigation = false
     private val currentTunnelState: TunnelManager.State
         get() = tunnelManager.state.value
+    private val httpPreferenceKeys = setOf(
+        "httpConnectionEnabled",
+        "httpAddress",
+        "httpHeaderName",
+        "httpHeaderValue"
+    )
+    private val prefsChangeListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key != null && httpPreferenceKeys.contains(key)) {
+                onHttpPreferencesChanged()
+            }
+        }
 
     private enum class LoadTarget { DIRECT, HTTP, TUNNEL }
     private enum class ToggleTarget { SHOW, HIDE }
@@ -269,7 +285,20 @@ class MainCoordinator(
             when {
                 msg.startsWith("CONNECTED") -> {
                     tunnelForceReconnectPending = false
-                    webView.postDelayed({ startPrimaryNavigation(force = true) }, 250L)
+                    val shouldRestart =
+                        pendingTunnelNavigation ||
+                            currentTarget == LoadTarget.TUNNEL ||
+                            tunnelAttempted ||
+                            webView.url.isNullOrEmpty() ||
+                            showingCachedSnapshot
+                    if (shouldRestart) {
+                        pendingTunnelNavigation = false
+                        webView.postDelayed({ startPrimaryNavigation(force = true) }, 250L)
+                    } else {
+                        logConnection(android.util.Log.DEBUG, "WEBNET") {
+                            "Ignorando CONNECTED; targetAtual=$currentTarget tunnelTentado=$tunnelAttempted"
+                        }
+                    }
                 }
                 msg.startsWith("WAITING_NETWORK") -> {
                     showFriendlyError(activity.getString(R.string.tunnel_waiting_network))
@@ -294,6 +323,7 @@ class MainCoordinator(
 
     fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(activity)
+        prefs.registerListener(prefsChangeListener)
         bindViews()
         setupInsets()
         configureWebView()
@@ -356,6 +386,9 @@ class MainCoordinator(
         if (receiverRegistered) {
             activity.unregisterReceiver(receiver)
             receiverRegistered = false
+        }
+        if (::prefs.isInitialized) {
+            prefs.unregisterListener(prefsChangeListener)
         }
         unregisterNetworkObserver()
         tunnelStateJob?.cancel()
@@ -459,6 +492,21 @@ class MainCoordinator(
                 activity.getString(R.string.post_notifications_denied),
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    private fun onHttpPreferencesChanged() {
+        val httpConfigured = isHttpConfigured()
+        val keepVisible = keepContentVisibleDuringLoad || webView.isVisible
+        activity.runOnUiThread {
+            if (!httpConfigured) {
+                startFallbackWatchers(forceImmediate = true)
+                tunnelForceReconnectPending = true
+                requestTunnelReconnect(force = false)
+            } else {
+                stopFallbackWatchers()
+            }
+            startConnectionLoop(force = true, keepWebVisible = keepVisible)
         }
     }
 
@@ -1289,6 +1337,7 @@ class MainCoordinator(
         directReconnectFailed = false
         tunnelReconnectFailed = false
         httpReconnectFailed = false
+        pendingTunnelNavigation = false
         offlineAssistEligibleAt = null
         cancelOfflineAssistVisibilityUpdate()
         snapshotRetryTarget = preferredInitialTarget()
@@ -1338,6 +1387,9 @@ class MainCoordinator(
             offlineAssistEligibleAt = SystemClock.elapsedRealtime() + offlineAssistDelayMs
             scheduleOfflineAssistVisibilityUpdate(offlineAssistDelayMs)
             changed = true
+        }
+        if (directDone && httpDone && !pendingTunnelNavigation) {
+            pendingTunnelNavigation = currentTarget != LoadTarget.TUNNEL
         }
         if (directReconnectFailed && tunnelReconnectFailed && prefs.cacheLastPage) {
             if (!showingCachedSnapshot) {
@@ -1590,28 +1642,49 @@ class MainCoordinator(
                 if (connectionJob?.isActive == true) continue
 
                 val httpConfigured = isHttpConfigured()
-                val directAvailable = isTargetReachable(LoadTarget.DIRECT, silent = true)
-                if (directAvailable) {
-                    if (showingCachedSnapshot) {
-                        logConnection(
-                            android.util.Log.DEBUG,
-                            "WEBNAV"
-                        ) { "Monitor: direct available while snapshot visible; recovering" }
-                        recoverFromSnapshot(LoadTarget.DIRECT)
-                        continue
-                    }
-                    if (currentTarget != LoadTarget.DIRECT) {
-                        logConnection(
-                            android.util.Log.DEBUG,
-                            "WEBNAV"
-                        ) { "Monitor: switching to direct after health success" }
+                val directConfigured = isDirectConfigured()
+                val now = SystemClock.elapsedRealtime()
+                if (!directConfigured) {
+                    lastDirectProbeAt = 0L
+                    if (currentTarget == LoadTarget.DIRECT) {
                         startConnectionLoop(force = true)
                         return@launch
                     }
-                    continue
-                } else if (currentTarget == LoadTarget.DIRECT) {
-                    startConnectionLoop(force = true)
-                    return@launch
+                } else {
+                    val shouldProbeDirect = currentTarget != LoadTarget.DIRECT ||
+                        now - lastDirectProbeAt >= directProbeIntervalMs
+                    if (shouldProbeDirect) {
+                        if (currentTarget == LoadTarget.DIRECT) {
+                            lastDirectProbeAt = now
+                        }
+                        val directAvailable = isTargetReachable(
+                            LoadTarget.DIRECT,
+                            silent = currentTarget == LoadTarget.DIRECT
+                        )
+                        if (directAvailable) {
+                            if (showingCachedSnapshot) {
+                                logConnection(
+                                    android.util.Log.DEBUG,
+                                    "WEBNAV"
+                                ) { "Monitor: direct available while snapshot visible; recovering" }
+                                recoverFromSnapshot(LoadTarget.DIRECT)
+                                continue
+                            }
+                            if (currentTarget != LoadTarget.DIRECT) {
+                                lastDirectProbeAt = now
+                                logConnection(
+                                    android.util.Log.DEBUG,
+                                    "WEBNAV"
+                                ) { "Monitor: switching to direct after health success" }
+                                startConnectionLoop(force = true)
+                                return@launch
+                            }
+                            continue
+                        } else if (currentTarget == LoadTarget.DIRECT) {
+                            startConnectionLoop(force = true)
+                            return@launch
+                        }
+                    }
                 }
 
                 if (!httpConfigured) {
@@ -1625,7 +1698,6 @@ class MainCoordinator(
                     }
                     lastHttpProbeAt = 0L
                 } else {
-                    val now = SystemClock.elapsedRealtime()
                     val shouldProbeHttp = currentTarget != LoadTarget.TUNNEL ||
                         now - lastHttpProbeAt >= httpProbeIntervalWhileOnTunnelMs
                     if (shouldProbeHttp) {
@@ -1642,7 +1714,11 @@ class MainCoordinator(
                                 recoverFromSnapshot(LoadTarget.HTTP)
                                 continue
                             }
-                            if (currentTarget != LoadTarget.HTTP) {
+                            val shouldSwitchToHttp =
+                                currentTarget != LoadTarget.HTTP &&
+                                    (currentTarget == LoadTarget.TUNNEL ||
+                                        isHigherPriority(LoadTarget.HTTP, currentTarget))
+                            if (shouldSwitchToHttp) {
                                 logConnection(
                                     android.util.Log.DEBUG,
                                     "WEBNAV"
@@ -1666,6 +1742,14 @@ class MainCoordinator(
                 }
             }
         }
+    }
+
+    private fun isHigherPriority(target: LoadTarget, than: LoadTarget): Boolean {
+        if (target == than) return false
+        val order = connectionOrder()
+        val targetIndex = order.indexOf(target).takeIf { it >= 0 } ?: Int.MAX_VALUE
+        val thanIndex = order.indexOf(than).takeIf { it >= 0 } ?: Int.MAX_VALUE
+        return targetIndex < thanIndex
     }
 
     private suspend fun awaitTunnelReady(timeoutMillis: Long = 20_000L): Boolean {
@@ -1793,6 +1877,7 @@ class MainCoordinator(
         }
         currentTarget = target
         updateActiveConnectionIndicator(target)
+        pendingTunnelNavigation = false
         if (target != LoadTarget.TUNNEL) {
             tunnelAttempted = false
             scheduleDirectFallback()
@@ -1856,6 +1941,7 @@ class MainCoordinator(
         snapshotRetryTarget = preferredInitialTarget()
         currentTarget = actualTarget
         updateActiveConnectionIndicator(actualTarget)
+        pendingTunnelNavigation = false
         if (actualTarget != LoadTarget.TUNNEL) {
             tunnelAttempted = false
             scheduleDirectFallback()
@@ -1919,7 +2005,7 @@ class MainCoordinator(
         }
 
     private fun isDirectConfigured(): Boolean =
-        !prefs.localIpEndpoint.isNullOrBlank()
+        prefs.hasDirectEndpointConfigured()
 
     private fun isHttpConfigured(): Boolean =
         prefs.httpConnectionEnabled && prefs.httpAddress.isNotBlank()
@@ -1954,17 +2040,12 @@ class MainCoordinator(
         webView.loadUrl(url)
     }
 
-    private fun connectionOrder(): List<LoadTarget> {
-        val order = mutableListOf<LoadTarget>()
-        if (isDirectConfigured()) {
-            order += LoadTarget.DIRECT
-        }
-        if (isHttpConfigured()) {
-            order += LoadTarget.HTTP
-        }
-        order += LoadTarget.TUNNEL
-        return order
-    }
+    private fun connectionOrder(): List<LoadTarget> =
+        listOfNotNull(
+            LoadTarget.DIRECT.takeIf { isDirectConfigured() },
+            LoadTarget.HTTP.takeIf { isHttpConfigured() },
+            LoadTarget.TUNNEL
+        )
 
     private fun shouldStartTunnelService(): Boolean =
         preferredInitialTarget() == LoadTarget.TUNNEL
@@ -2256,12 +2337,22 @@ class MainCoordinator(
 
     private fun updateActiveConnectionIndicator(target: LoadTarget) {
         val changed = lastAnnouncedTarget != target
-        if (target == LoadTarget.TUNNEL) {
-            if (changed) {
-                lastHttpProbeAt = SystemClock.elapsedRealtime()
+        val now = SystemClock.elapsedRealtime()
+        when (target) {
+            LoadTarget.TUNNEL -> {
+                if (changed) {
+                    lastHttpProbeAt = now
+                }
+                // keep direct probe running while on tunnel
             }
-        } else {
-            lastHttpProbeAt = 0L
+            LoadTarget.HTTP -> {
+                lastHttpProbeAt = now
+                lastDirectProbeAt = 0L
+            }
+            LoadTarget.DIRECT -> {
+                lastDirectProbeAt = now
+                lastHttpProbeAt = 0L
+            }
         }
         val messageRes = when (target) {
             LoadTarget.DIRECT -> R.string.connection_mode_direct
@@ -2313,6 +2404,9 @@ class MainCoordinator(
 
     private fun scheduleDirectFallback() {
         cancelDirectFallback()
+        if (currentTarget != LoadTarget.DIRECT) {
+            return
+        }
         val runnable = Runnable {
             if (currentTarget != LoadTarget.TUNNEL && !tunnelAttempted) {
                 android.util.Log.w("WEBNAV", "Primary load timeout ($currentTarget); switching to tunnel")

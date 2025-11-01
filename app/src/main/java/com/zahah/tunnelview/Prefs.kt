@@ -11,6 +11,14 @@ class Prefs(ctx: Context) {
         ctx.getSharedPreferences("prefs", Context.MODE_PRIVATE)
     private val appDefaults: AppDefaults = AppDefaultsProvider.defaults(ctx)
 
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sp.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        sp.unregisterOnSharedPreferenceChangeListener(listener)
+    }
+
     var ntfyFetchEnabled: Boolean
         get() = sp.getBoolean(KEY_NTFY_FETCH_ENABLED, true)
         set(value) = sp.edit { putBoolean(KEY_NTFY_FETCH_ENABLED, value) }
@@ -259,11 +267,12 @@ class Prefs(ctx: Context) {
 
     var localIpEndpoint: String?
         get() {
-            val stored = sp.getString("localIpEndpoint", null)
-                ?.trim()
-                ?.takeIf { it.isNotEmpty() }
+            val stored = localIpEndpointRaw()?.trim()?.takeIf { it.isNotEmpty() }
             if (stored != null) {
                 return stored
+            }
+            if (!directConnectionEnabled) {
+                return null
             }
             val fallbackHost = appDefaults.directHost.trim().takeIf { it.isNotEmpty() } ?: return null
             val fallbackPortRaw = appDefaults.directPort.trim().takeIf { it.isNotEmpty() }
@@ -287,6 +296,17 @@ class Prefs(ctx: Context) {
 
     fun localIpEndpointRaw(): String? =
         sp.getString("localIpEndpoint", null)
+
+    var directConnectionEnabled: Boolean
+        get() = sp.getBoolean(KEY_DIRECT_ENABLED, appDefaults.directHost.trim().isNotEmpty())
+        set(value) = sp.edit { putBoolean(KEY_DIRECT_ENABLED, value) }
+
+    fun hasDirectEndpointConfigured(): Boolean {
+        if (!directConnectionEnabled) return false
+        val stored = localIpEndpointRaw()?.trim()
+        if (!stored.isNullOrEmpty()) return true
+        return appDefaults.directHost.trim().isNotEmpty()
+    }
 
     val ntfyEndpointHistory: List<String>
         get() {
@@ -425,6 +445,7 @@ class Prefs(ctx: Context) {
         private const val KEY_HTTP_ADDRESS = "httpAddress"
         private const val KEY_HTTP_HEADER = "httpHeaderName"
         private const val KEY_HTTP_KEY = "httpHeaderValue"
+        private const val KEY_DIRECT_ENABLED = "directConnectionEnabled"
         private const val DEFAULT_TIMEOUT_SECONDS = 20
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
         private const val MIN_TIMEOUT_SECONDS = 15

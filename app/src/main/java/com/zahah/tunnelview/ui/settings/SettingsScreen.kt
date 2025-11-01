@@ -143,6 +143,7 @@ fun SettingsScreen(
     var remotePort by rememberSaveable { mutableStateOf("") }
     var localLanHost by rememberSaveable { mutableStateOf("") }
     var localLanPort by rememberSaveable { mutableStateOf("") }
+    var directEnabled by rememberSaveable { mutableStateOf(prefs.directConnectionEnabled) }
     var httpEnabled by rememberSaveable { mutableStateOf(prefs.httpConnectionEnabled) }
     var httpAddress by rememberSaveable { mutableStateOf(prefs.httpAddress) }
     var httpHeader by rememberSaveable { mutableStateOf(prefs.httpHeaderName) }
@@ -268,6 +269,7 @@ fun SettingsScreen(
         httpAddress = prefs.httpAddress
         httpHeader = prefs.httpHeaderName
         httpKey = prefs.httpHeaderValue
+        directEnabled = prefs.directConnectionEnabled
         val fallbackDirectHost = appDefaults.directHost
         val fallbackDirectPort = appDefaults.directPort
         val resolvedLocalEndpoint = prefs.localIpEndpoint
@@ -402,7 +404,12 @@ fun SettingsScreen(
                 prefs.httpHeaderName = normalizedHttpHeader
                 prefs.httpHeaderValue = normalizedHttpKey
                 prefs.httpConnectionEnabled = httpEnabled && normalizedHttpAddress.isNotEmpty()
-                prefs.localIpEndpoint = buildLocalEndpoint(localLanHost.trim(), localLanPort.trim())
+                val normalizedDirectHost = localLanHost.trim()
+                val normalizedDirectPort = localLanPort.trim()
+                prefs.localIpEndpoint = buildLocalEndpoint(normalizedDirectHost, normalizedDirectPort)
+                val hasEndpoint = prefs.localIpEndpoint?.isNotEmpty() == true ||
+                    appDefaults.directHost.trim().isNotEmpty()
+                prefs.directConnectionEnabled = directEnabled && hasEndpoint
                 prefs.useManualEndpoint = true
 
                 prefs.cacheLastPage = cacheLastPage
@@ -677,6 +684,7 @@ fun SettingsScreen(
                 remotePort = remotePort,
                 localLanHost = localLanHost,
                 localLanPort = localLanPort,
+                directEnabled = directEnabled,
                 httpEnabled = httpEnabled,
                 httpAddress = httpAddress,
                 httpHeader = httpHeader,
@@ -690,6 +698,7 @@ fun SettingsScreen(
                 onRemotePortChange = { remotePort = it },
                 onLocalLanHostChange = { localLanHost = it },
                 onLocalLanPortChange = { localLanPort = it },
+                onDirectToggle = { enabled -> directEnabled = enabled },
                 onHttpEnabledChange = { httpEnabled = it },
                 onHttpAddressChange = { httpAddress = it },
                 onHttpHeaderChange = { httpHeader = it },
@@ -1242,6 +1251,7 @@ private fun NetworkSettingsPage(
     remotePort: String,
     localLanHost: String,
     localLanPort: String,
+    directEnabled: Boolean,
     httpEnabled: Boolean,
     httpAddress: String,
     httpHeader: String,
@@ -1252,14 +1262,23 @@ private fun NetworkSettingsPage(
     onRemotePortChange: (String) -> Unit,
     onLocalLanHostChange: (String) -> Unit,
     onLocalLanPortChange: (String) -> Unit,
+    onDirectToggle: (Boolean) -> Unit,
     onHttpEnabledChange: (Boolean) -> Unit,
     onHttpAddressChange: (String) -> Unit,
     onHttpHeaderChange: (String) -> Unit,
     onHttpKeyChange: (String) -> Unit,
 ) {
     var tunnelExpanded by rememberSaveable { mutableStateOf(true) }
-    var localAccessExpanded by rememberSaveable { mutableStateOf(true) }
+    var localAccessExpanded by rememberSaveable { mutableStateOf(directEnabled) }
     var httpExpanded by rememberSaveable { mutableStateOf(httpEnabled || httpAddress.isNotBlank()) }
+
+    LaunchedEffect(directEnabled) {
+        if (!directEnabled) {
+            localAccessExpanded = false
+        } else if (!localAccessExpanded) {
+            localAccessExpanded = true
+        }
+    }
 
     Column(
         modifier = modifier
@@ -1337,8 +1356,12 @@ private fun NetworkSettingsPage(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilterChip(
-                        selected = localAccessExpanded,
-                        onClick = { localAccessExpanded = !localAccessExpanded },
+                        selected = directEnabled,
+                        onClick = {
+                            val newEnabled = !directEnabled
+                            onDirectToggle(newEnabled)
+                            localAccessExpanded = newEnabled
+                        },
                         label = { Text(text = stringResource(id = R.string.direct_access_button_label)) },
                         leadingIcon = if (localAccessExpanded) {
                             {
@@ -1383,6 +1406,7 @@ private fun NetworkSettingsPage(
                             onValueChange = onLocalLanHostChange,
                             label = { Text(stringResource(id = R.string.hint_local_lan_host)) },
                             singleLine = true,
+                            enabled = directEnabled,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
                         )
                         OutlinedTextField(
@@ -1391,6 +1415,7 @@ private fun NetworkSettingsPage(
                             onValueChange = onLocalLanPortChange,
                             label = { Text(stringResource(id = R.string.hint_local_lan_port)) },
                             singleLine = true,
+                            enabled = directEnabled,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
                     }
