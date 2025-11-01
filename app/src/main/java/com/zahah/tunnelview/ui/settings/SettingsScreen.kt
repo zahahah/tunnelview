@@ -40,9 +40,10 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
@@ -142,6 +143,10 @@ fun SettingsScreen(
     var remotePort by rememberSaveable { mutableStateOf("") }
     var localLanHost by rememberSaveable { mutableStateOf("") }
     var localLanPort by rememberSaveable { mutableStateOf("") }
+    var httpEnabled by rememberSaveable { mutableStateOf(prefs.httpConnectionEnabled) }
+    var httpAddress by rememberSaveable { mutableStateOf(prefs.httpAddress) }
+    var httpHeader by rememberSaveable { mutableStateOf(prefs.httpHeaderName) }
+    var httpKey by rememberSaveable { mutableStateOf(prefs.httpHeaderValue) }
 
     var cacheLastPage by rememberSaveable { mutableStateOf(false) }
     var persistentNotification by rememberSaveable { mutableStateOf(false) }
@@ -168,6 +173,9 @@ fun SettingsScreen(
     var builderDefaultDirectHost by rememberSaveable { mutableStateOf(appDefaults.directHost) }
     var builderDefaultDirectPort by rememberSaveable { mutableStateOf(appDefaults.directPort) }
     var builderDefaultLocalPort by rememberSaveable { mutableStateOf(appDefaults.localPort) }
+    var builderDefaultHttpAddress by rememberSaveable { mutableStateOf(appDefaults.httpAddress) }
+    var builderDefaultHttpHeader by rememberSaveable { mutableStateOf(appDefaults.httpHeader) }
+    var builderDefaultHttpKey by rememberSaveable { mutableStateOf(appDefaults.httpKey) }
     var builderDefaultSshUser by rememberSaveable { mutableStateOf(appDefaults.sshUser) }
     var builderDefaultGitRepo by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
     var builderDefaultGitFile by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
@@ -256,6 +264,10 @@ fun SettingsScreen(
         localPort = prefs.localPort.toString()
         remoteHost = prefs.remoteHost
         remotePort = prefs.remotePort.takeIf { it > 0 }?.toString().orEmpty()
+        httpEnabled = prefs.httpConnectionEnabled
+        httpAddress = prefs.httpAddress
+        httpHeader = prefs.httpHeaderName
+        httpKey = prefs.httpHeaderValue
         val fallbackDirectHost = appDefaults.directHost
         val fallbackDirectPort = appDefaults.directPort
         val resolvedLocalEndpoint = prefs.localIpEndpoint
@@ -357,7 +369,7 @@ fun SettingsScreen(
                 if (manualSshChanged) {
                     val now = System.currentTimeMillis()
                     if (trimmedSshHost.isNullOrBlank() && parsedSshPort == null) {
-                        prefs.lastManualSshConfigAt = 0L
+                        prefs.lastManualSshConfigAt = now
                         prefs.manualSshOverrideFailureStartedAt = 0L
                     } else {
                         prefs.lastManualSshConfigAt = now
@@ -383,6 +395,13 @@ fun SettingsScreen(
                 } else {
                     remotePortInput.toIntOrNull()?.let { prefs.remotePort = it }
                 }
+                val normalizedHttpAddress = httpAddress.trim()
+                val normalizedHttpHeader = httpHeader.trim()
+                val normalizedHttpKey = httpKey.trim()
+                prefs.httpAddress = normalizedHttpAddress
+                prefs.httpHeaderName = normalizedHttpHeader
+                prefs.httpHeaderValue = normalizedHttpKey
+                prefs.httpConnectionEnabled = httpEnabled && normalizedHttpAddress.isNotEmpty()
                 prefs.localIpEndpoint = buildLocalEndpoint(localLanHost.trim(), localLanPort.trim())
                 prefs.useManualEndpoint = true
 
@@ -426,6 +445,9 @@ fun SettingsScreen(
         val trimmedDefaultDirectHost = builderDefaultDirectHost.trim()
         val trimmedDefaultDirectPort = builderDefaultDirectPort.trim()
         val trimmedDefaultLocalPort = builderDefaultLocalPort.trim()
+        val trimmedDefaultHttpAddress = builderDefaultHttpAddress.trim()
+        val trimmedDefaultHttpHeader = builderDefaultHttpHeader.trim()
+        val trimmedDefaultHttpKey = builderDefaultHttpKey.trim()
         val trimmedDefaultSshUser = builderDefaultSshUser.trim()
         val trimmedDefaultGitRepo = builderDefaultGitRepo.trim()
         val trimmedDefaultGitFile = builderDefaultGitFile.trim()
@@ -477,6 +499,9 @@ fun SettingsScreen(
         builderDefaultDirectHost = trimmedDefaultDirectHost
         builderDefaultDirectPort = trimmedDefaultDirectPort
         builderDefaultLocalPort = trimmedDefaultLocalPort
+        builderDefaultHttpAddress = trimmedDefaultHttpAddress
+        builderDefaultHttpHeader = trimmedDefaultHttpHeader
+        builderDefaultHttpKey = trimmedDefaultHttpKey
         builderDefaultSshUser = trimmedDefaultSshUser
         builderDefaultGitRepo = trimmedDefaultGitRepo
         builderDefaultGitFile = trimmedDefaultGitFile
@@ -501,6 +526,9 @@ fun SettingsScreen(
                         defaultDirectHost = trimmedDefaultDirectHost,
                         defaultDirectPort = trimmedDefaultDirectPort,
                         defaultLocalPort = trimmedDefaultLocalPort,
+                        defaultHttpAddress = trimmedDefaultHttpAddress,
+                        defaultHttpHeader = trimmedDefaultHttpHeader,
+                        defaultHttpKey = trimmedDefaultHttpKey,
                         defaultSshUser = trimmedDefaultSshUser,
                         defaultGitRepoUrl = trimmedDefaultGitRepo,
                         defaultGitFilePath = trimmedDefaultGitFile,
@@ -649,6 +677,10 @@ fun SettingsScreen(
                 remotePort = remotePort,
                 localLanHost = localLanHost,
                 localLanPort = localLanPort,
+                httpEnabled = httpEnabled,
+                httpAddress = httpAddress,
+                httpHeader = httpHeader,
+                httpKey = httpKey,
                 onBack = {
                     if (autoSaveEnabled) triggerSave(showMessage = false)
                     currentPage = SettingsPage.ROOT.name
@@ -658,6 +690,10 @@ fun SettingsScreen(
                 onRemotePortChange = { remotePort = it },
                 onLocalLanHostChange = { localLanHost = it },
                 onLocalLanPortChange = { localLanPort = it },
+                onHttpEnabledChange = { httpEnabled = it },
+                onHttpAddressChange = { httpAddress = it },
+                onHttpHeaderChange = { httpHeader = it },
+                onHttpKeyChange = { httpKey = it },
             )
 
             SettingsPage.PREFERENCES -> PreferencesPage(
@@ -755,6 +791,9 @@ fun SettingsScreen(
                     defaultRemoteInternalPort = builderRemoteInternalPort,
                     defaultDirectHost = builderDefaultDirectHost,
                     defaultDirectPort = builderDefaultDirectPort,
+                    defaultHttpAddress = builderDefaultHttpAddress,
+                    defaultHttpHeader = builderDefaultHttpHeader,
+                    defaultHttpKey = builderDefaultHttpKey,
                     defaultLocalPort = builderDefaultLocalPort,
                     defaultSshUser = builderDefaultSshUser,
                     defaultGitRepoUrl = builderDefaultGitRepo,
@@ -782,6 +821,9 @@ fun SettingsScreen(
                         builderDefaultDirectPort = it
                         builderDirectPortError = null
                     },
+                    onDefaultHttpAddressChange = { builderDefaultHttpAddress = it },
+                    onDefaultHttpHeaderChange = { builderDefaultHttpHeader = it },
+                    onDefaultHttpKeyChange = { builderDefaultHttpKey = it },
                     onDefaultLocalPortChange = {
                         builderDefaultLocalPort = it
                         builderLocalPortError = null
@@ -1200,15 +1242,24 @@ private fun NetworkSettingsPage(
     remotePort: String,
     localLanHost: String,
     localLanPort: String,
+    httpEnabled: Boolean,
+    httpAddress: String,
+    httpHeader: String,
+    httpKey: String,
     onBack: () -> Unit,
     onLocalPortChange: (String) -> Unit,
     onRemoteHostChange: (String) -> Unit,
     onRemotePortChange: (String) -> Unit,
     onLocalLanHostChange: (String) -> Unit,
     onLocalLanPortChange: (String) -> Unit,
+    onHttpEnabledChange: (Boolean) -> Unit,
+    onHttpAddressChange: (String) -> Unit,
+    onHttpHeaderChange: (String) -> Unit,
+    onHttpKeyChange: (String) -> Unit,
 ) {
     var tunnelExpanded by rememberSaveable { mutableStateOf(true) }
     var localAccessExpanded by rememberSaveable { mutableStateOf(true) }
+    var httpExpanded by rememberSaveable { mutableStateOf(httpEnabled || httpAddress.isNotBlank()) }
 
     Column(
         modifier = modifier
@@ -1341,6 +1392,68 @@ private fun NetworkSettingsPage(
                             label = { Text(stringResource(id = R.string.hint_local_lan_port)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
+            }
+        }
+
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.settings_section_http_title),
+            description = stringResource(id = R.string.settings_section_http_description),
+            expanded = httpExpanded,
+            onToggle = { httpExpanded = !httpExpanded }
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = httpEnabled,
+                        onCheckedChange = {
+                            onHttpEnabledChange(it)
+                            if (it) {
+                                httpExpanded = true
+                            }
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = stringResource(id = R.string.settings_http_enable_label),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                AnimatedVisibility(visible = httpEnabled) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = httpAddress,
+                            onValueChange = onHttpAddressChange,
+                            label = { Text(stringResource(id = R.string.settings_http_address_label)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = httpHeader,
+                            onValueChange = onHttpHeaderChange,
+                            label = { Text(stringResource(id = R.string.settings_http_header_label)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = httpKey,
+                            onValueChange = onHttpKeyChange,
+                            label = { Text(stringResource(id = R.string.settings_http_key_label)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
                         )
                     }
                 }
@@ -1680,6 +1793,9 @@ private fun AppBuilderPage(
     defaultRemoteInternalPort: String,
     defaultDirectHost: String,
     defaultDirectPort: String,
+    defaultHttpAddress: String,
+    defaultHttpHeader: String,
+    defaultHttpKey: String,
     defaultLocalPort: String,
     defaultSshUser: String,
     defaultGitRepoUrl: String,
@@ -1697,6 +1813,9 @@ private fun AppBuilderPage(
     onDefaultPortChange: (String) -> Unit,
     onDefaultDirectHostChange: (String) -> Unit,
     onDefaultDirectPortChange: (String) -> Unit,
+    onDefaultHttpAddressChange: (String) -> Unit,
+    onDefaultHttpHeaderChange: (String) -> Unit,
+    onDefaultHttpKeyChange: (String) -> Unit,
     onDefaultLocalPortChange: (String) -> Unit,
     onDefaultSshUserChange: (String) -> Unit,
     onDefaultGitRepoChange: (String) -> Unit,
@@ -1859,6 +1978,36 @@ private fun AppBuilderPage(
                         )
                     }
                 }
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultHttpAddress,
+                onValueChange = onDefaultHttpAddressChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_http_address_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_http_address_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultHttpHeader,
+                onValueChange = onDefaultHttpHeaderChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_http_header_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_http_header_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultHttpKey,
+                onValueChange = onDefaultHttpKeyChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_http_key_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_http_key_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),

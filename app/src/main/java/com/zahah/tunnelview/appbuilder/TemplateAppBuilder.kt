@@ -220,6 +220,9 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackDirectHost = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty()
         val fallbackDirectPort = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty()
         val fallbackSshUser = BuildConfig.DEFAULT_SSH_USER.orEmpty()
+        val fallbackHttpAddress = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty()
+        val fallbackHttpHeader = BuildConfig.DEFAULT_HTTP_HEADER.orEmpty()
+        val fallbackHttpKey = BuildConfig.DEFAULT_HTTP_KEY.orEmpty()
         val fallbackGitRepo = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty()
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
         val fallbackSshKey = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()
@@ -232,6 +235,9 @@ class TemplateAppBuilder(private val context: Context) {
         val directHost = request.defaultDirectHost
         val directPort = request.defaultDirectPort
         val localPort = request.defaultLocalPort
+        val httpAddress = request.defaultHttpAddress
+        val httpHeader = request.defaultHttpHeader
+        val httpKey = request.defaultHttpKey
         val sshUser = request.defaultSshUser
         val gitRepo = request.defaultGitRepoUrl
         val gitFile = request.defaultGitFilePath
@@ -244,6 +250,9 @@ class TemplateAppBuilder(private val context: Context) {
             port == fallbackPort &&
             directHost == fallbackDirectHost &&
             directPort == fallbackDirectPort &&
+            httpAddress == fallbackHttpAddress &&
+            httpHeader == fallbackHttpHeader &&
+            httpKey == fallbackHttpKey &&
             sshUser == fallbackSshUser &&
             gitRepo == fallbackGitRepo &&
             gitFile == fallbackGitFile &&
@@ -264,6 +273,10 @@ class TemplateAppBuilder(private val context: Context) {
             put("directHost", directHost)
             put("directPort", directPort)
             put("localPort", localPort)
+            put("httpAddress", httpAddress)
+            put("httpHeader", httpHeader)
+            put("httpKey", httpKey)
+            put("httpEnabled", httpAddress.isNotBlank())
             put("sshUser", sshUser)
             put("gitRepoUrl", gitRepo)
             put("gitFilePath", gitFile)
@@ -638,6 +651,9 @@ data class AppBuildRequest(
     val defaultDirectHost: String = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty(),
     val defaultDirectPort: String = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty(),
     val defaultLocalPort: String = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty(),
+    val defaultHttpAddress: String = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty(),
+    val defaultHttpHeader: String = BuildConfig.DEFAULT_HTTP_HEADER.orEmpty(),
+    val defaultHttpKey: String = BuildConfig.DEFAULT_HTTP_KEY.orEmpty(),
     val defaultSshUser: String = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
     val defaultGitRepoUrl: String = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
     val defaultGitFilePath: String = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),

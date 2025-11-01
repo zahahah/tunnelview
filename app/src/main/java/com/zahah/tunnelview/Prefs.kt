@@ -78,6 +78,47 @@ class Prefs(ctx: Context) {
             }
         }
 
+    var httpConnectionEnabled: Boolean
+        get() = if (sp.contains(KEY_HTTP_ENABLED)) {
+            sp.getBoolean(KEY_HTTP_ENABLED, false)
+        } else {
+            appDefaults.httpEnabled && httpAddress.isNotBlank()
+        }
+        set(value) = sp.edit { putBoolean(KEY_HTTP_ENABLED, value) }
+
+    var httpAddress: String
+        get() = sp.getString(KEY_HTTP_ADDRESS, appDefaults.httpAddress)?.trim().orEmpty()
+        set(value) = sp.edit {
+            val normalized = value.trim()
+            if (normalized.isEmpty()) {
+                remove(KEY_HTTP_ADDRESS)
+            } else {
+                putString(KEY_HTTP_ADDRESS, normalized)
+            }
+        }
+
+    var httpHeaderName: String
+        get() = sp.getString(KEY_HTTP_HEADER, appDefaults.httpHeader)?.trim().orEmpty()
+        set(value) = sp.edit {
+            val normalized = value.trim()
+            if (normalized.isEmpty()) {
+                remove(KEY_HTTP_HEADER)
+            } else {
+                putString(KEY_HTTP_HEADER, normalized)
+            }
+        }
+
+    var httpHeaderValue: String
+        get() = sp.getString(KEY_HTTP_KEY, appDefaults.httpKey)?.trim().orEmpty()
+        set(value) = sp.edit {
+            val normalized = value.trim()
+            if (normalized.isEmpty()) {
+                remove(KEY_HTTP_KEY)
+            } else {
+                putString(KEY_HTTP_KEY, normalized)
+            }
+        }
+
     // SSH SERVER HOST/PORT (e.g., ngrok)
     var sshHost: String?
         get() = sp.getString("sshHost", null)
@@ -380,6 +421,10 @@ class Prefs(ctx: Context) {
         private const val KEY_SSH_CONNECT_TIMEOUT = "sshConnectTimeoutSeconds"
         private const val KEY_SSH_SOCKET_TIMEOUT = "sshSocketTimeoutSeconds"
         private const val KEY_SSH_KEEP_ALIVE = "sshKeepAliveIntervalSeconds"
+        private const val KEY_HTTP_ENABLED = "httpConnectionEnabled"
+        private const val KEY_HTTP_ADDRESS = "httpAddress"
+        private const val KEY_HTTP_HEADER = "httpHeaderName"
+        private const val KEY_HTTP_KEY = "httpHeaderValue"
         private const val DEFAULT_TIMEOUT_SECONDS = 20
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
         private const val MIN_TIMEOUT_SECONDS = 15

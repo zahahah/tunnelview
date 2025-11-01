@@ -37,6 +37,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -203,6 +204,8 @@ fun ConnectionDiagnosticsScreen(
 @Composable
 private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
     val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM) }
+    val context = LocalContext.current
+    val prefs = remember { Prefs(context) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val endpointText = snapshot.endpoint?.let {
             stringResource(
@@ -231,6 +234,35 @@ private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
 
         Text(
             text = stringResource(R.string.diagnostics_attempts, snapshot.attempt),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        val httpEnabled = prefs.httpConnectionEnabled
+        val httpEnabledText = if (httpEnabled) {
+            stringResource(id = R.string.diagnostics_yes)
+        } else {
+            stringResource(id = R.string.diagnostics_no)
+        }
+        val httpAddress = prefs.httpAddress.ifBlank { stringResource(id = R.string.diagnostics_value_none) }
+        val httpHeaderName = prefs.httpHeaderName.ifBlank { stringResource(id = R.string.diagnostics_value_none) }
+        val httpKeyConfiguredText = if (prefs.httpHeaderValue.isNotBlank()) {
+            stringResource(id = R.string.diagnostics_yes)
+        } else {
+            stringResource(id = R.string.diagnostics_no)
+        }
+        Text(
+            text = stringResource(R.string.diagnostics_http_enabled, httpEnabledText),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.diagnostics_http_address, httpAddress),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.diagnostics_http_header, httpHeaderName),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.diagnostics_http_key_state, httpKeyConfiguredText),
             style = MaterialTheme.typography.bodyMedium
         )
         val forceIpv4Text = if (snapshot.forceIpv4) {

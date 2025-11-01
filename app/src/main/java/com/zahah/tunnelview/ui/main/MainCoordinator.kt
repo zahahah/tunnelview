@@ -63,6 +63,8 @@ import com.zahah.tunnelview.data.ProxyRepository
 import com.zahah.tunnelview.data.ProxyStatus
 import com.zahah.tunnelview.storage.CredentialsStore
 import com.zahah.tunnelview.ui.debug.ConnectionDiagnosticsActivity
+import com.zahah.tunnelview.logging.ConnEvent
+import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
@@ -120,6 +122,8 @@ class MainCoordinator(
     private var receiverRegistered = false
     private var pendingTunnelAction: String? = null
     private var pendingSseStart: Boolean = false
+    private var fallbackWatchersRunning: Boolean = false
+    private var httpReconnectJob: Job? = null
     private var toolbarVisible = true
     private var appBarAnimator: ViewPropertyAnimator? = null
     private var showingCachedSnapshot = false
@@ -127,12 +131,16 @@ class MainCoordinator(
     private var tunnelAttempted = false
     private var directReconnectAttempted = false
     private var tunnelReconnectAttempted = false
+    private var httpReconnectAttempted = false
     private var directReconnectFailed = false
     private var tunnelReconnectFailed = false
+    private var httpReconnectFailed = false
     private var tunnelForceReconnectPending = false
     private var currentTarget = LoadTarget.DIRECT
+    private var lastAnnouncedTarget: LoadTarget? = null
     private var lastTapAt = 0L
     private var lastTapTarget: ToggleTarget? = null
+    private var lastHttpProbeAt = 0L
     private val doubleTapTimeout by lazy { ViewConfiguration.getDoubleTapTimeout().toLong() }
     private var statusBarInset = 0
     private var systemBottomInset = 0
@@ -151,6 +159,7 @@ class MainCoordinator(
     private var skipFirstEndpointEmission = true
     private val connectionRetryDelayMs = 3_000L
     private val monitorIntervalMs = 5_000L
+    private val httpProbeIntervalWhileOnTunnelMs = TimeUnit.SECONDS.toMillis(10)
     private var shouldSnapshotCurrentPage = false
     private var pendingSnapshot = false
     private var lastSnapshotUrl: String? = null
@@ -175,7 +184,7 @@ class MainCoordinator(
     private val currentTunnelState: TunnelManager.State
         get() = tunnelManager.state.value
 
-    private enum class LoadTarget { DIRECT, TUNNEL }
+    private enum class LoadTarget { DIRECT, HTTP, TUNNEL }
     private enum class ToggleTarget { SHOW, HIDE }
 
     private fun logConnection(level: Int, tag: String, lazyMessage: () -> String) {
@@ -251,6 +260,8 @@ class MainCoordinator(
             .build()
     }
 
+    private val connLogger by lazy { ConnLogger.getInstance(activity.applicationContext) }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Events.BROADCAST) return
@@ -298,22 +309,23 @@ class MainCoordinator(
 
     fun onStart() {
         isForeground = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ensurePostNotificationsThenStart()
-        } else {
-            startTunnelServiceSafely()
+        val shouldStartTunnel = shouldStartTunnelService()
+        if (shouldStartTunnel) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ensurePostNotificationsThenStart()
+            } else {
+                startTunnelServiceSafely()
+            }
         }
-        EndpointSyncWorker.schedulePeriodic(activity.applicationContext)
-        EndpointSyncWorker.enqueueImmediate(activity.applicationContext)
         val queuedAction = pendingTunnelAction
         pendingTunnelAction = null
-        val hadPendingSse = pendingSseStart
-        pendingSseStart = false
-        startNtfyUpdates()
-        if (hadPendingSse) {
-            // startNtfyUpdates above already tried to run; if it fails, pendingSseStart flips back to true
+        val shouldRunFallbackWatchers = !prefs.httpConnectionEnabled || prefs.httpAddress.isBlank()
+        if (shouldRunFallbackWatchers) {
+            startFallbackWatchers(forceImmediate = true)
+        } else {
+            stopFallbackWatchers()
         }
-        if (queuedAction != null) {
+        if (shouldStartTunnel && queuedAction != null) {
             startTunnelServiceSafely(queuedAction)
         }
         webView.postDelayed({
@@ -336,7 +348,7 @@ class MainCoordinator(
     fun onStop() {
         isForeground = false
         pauseConnectionFlow()
-        stopNtfyUpdates()
+        stopFallbackWatchers()
         EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
     }
 
@@ -360,7 +372,7 @@ class MainCoordinator(
         lastSnapshotUrl = null
         lastSnapshotHash = 0
         cancelDirectFallback()
-        stopNtfyUpdates()
+        stopFallbackWatchers()
     }
 
     @Suppress("UNUSED_PARAMETER")
@@ -397,7 +409,7 @@ class MainCoordinator(
             webView.reload()
             return true
         }
-        if (currentTarget == LoadTarget.DIRECT) {
+        if (currentTarget != LoadTarget.TUNNEL) {
             tunnelAttempted = false
             scheduleDirectFallback()
         } else {
@@ -406,7 +418,7 @@ class MainCoordinator(
         }
         keepContentVisibleDuringLoad = false
         showLoading()
-        webView.loadUrl(homeUrl)
+        loadUrlForTarget(homeUrl, currentTarget)
         return true
     }
 
@@ -438,7 +450,9 @@ class MainCoordinator(
 
     fun onNotificationPermissionResult(granted: Boolean) {
         if (granted) {
-            startTunnelServiceSafely()
+            if (shouldStartTunnelService()) {
+                startTunnelServiceSafely()
+            }
         } else {
             Toast.makeText(
                 activity,
@@ -640,11 +654,16 @@ class MainCoordinator(
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val mapped = toLocalLoopbackIfNeeded(request.url)
-                return if (mapped != request.url) {
-                    view.loadUrl(mapped.toString())
-                    true
-                } else {
-                    false
+                return when {
+                    currentTarget == LoadTarget.TUNNEL && mapped != request.url -> {
+                        view.loadUrl(mapped.toString())
+                        true
+                    }
+                    currentTarget == LoadTarget.HTTP -> {
+                        loadUrlForTarget(request.url.toString(), LoadTarget.HTTP)
+                        true
+                    }
+                    else -> false
                 }
             }
 
@@ -768,82 +787,140 @@ class MainCoordinator(
             ): WebResourceResponse? {
                 val isMain = request.isForMainFrame
                 val method = request.method.uppercase()
-                if (isMain) {
-                    logConnection(android.util.Log.DEBUG, "WEBREQ") {
-                        "MAIN $method ${request.url}"
-                    }
-                    return null
-                }
                 if (method != "GET") return null
-                if (currentTarget != LoadTarget.TUNNEL) return null
-                val orig = request.url
-                val url = toLocalLoopbackIfNeeded(orig).toString()
-                logConnection(android.util.Log.DEBUG, "WEBREQ") { "GET $orig -> $url" }
-
-                return try {
-                    val reqBuilder = Request.Builder()
-                        .url(url)
-                        .header("Accept", request.requestHeaders["Accept"] ?: "*/*")
-                        .header("User-Agent", request.requestHeaders["User-Agent"] ?: "WebView")
-                        .apply {
-                            CookieManager.getInstance().getCookie(url)?.let {
-                                header("Cookie", it)
+                return when (currentTarget) {
+                    LoadTarget.TUNNEL -> {
+                        if (isMain) {
+                            logConnection(android.util.Log.DEBUG, "WEBREQ") {
+                                "MAIN $method ${request.url}"
                             }
-                            request.requestHeaders["Referer"]?.let { header("Referer", it) }
-                            request.requestHeaders["Cache-Control"]?.let { header("Cache-Control", it) }
-                            request.requestHeaders["If-Modified-Since"]?.let { header("If-Modified-Since", it) }
-                            request.requestHeaders["If-None-Match"]?.let { header("If-None-Match", it) }
+                            return null
                         }
-                        .build()
-
-                    val resp: Response = http.newCall(reqBuilder).execute()
-                    val body = resp.body ?: run {
-                        resp.closeQuietly()
-                        return null
+                        val orig = request.url
+                        val url = toLocalLoopbackIfNeeded(orig).toString()
+                        logConnection(android.util.Log.DEBUG, "WEBREQ") { "GET $orig -> $url" }
+                        interceptRequestWithClient(url, request, applyHttpHeaders = false)
                     }
-
-                    val code = resp.code
-                    val mime =
-                        resp.header("Content-Type")?.substringBefore(";") ?: guessMime(url)
-                    val enc =
-                        resp.header("Content-Type")?.substringAfter("charset=", "")?.ifBlank { null }
-                            ?: "utf-8"
-                    val sizeHint = body.contentLength()
-                    val respSource = when {
-                        resp.cacheResponse != null -> "cache"
-                        resp.networkResponse != null -> "net"
-                        else -> "n/a"
-                    }
-
-                    logConnection(android.util.Log.DEBUG, "WEBRESP") {
-                        "↩ ${code} ${mime} ${if (sizeHint >= 0) "${sizeHint}B" else "stream"} [$respSource] <- $url"
-                    }
-
-                    val upstream = body.byteStream()
-                    val proxyStream = object : InputStream() {
-                        override fun read(): Int = upstream.read()
-                        override fun read(b: ByteArray): Int = upstream.read(b)
-                        override fun read(b: ByteArray, off: Int, len: Int): Int =
-                            upstream.read(b, off, len)
-                        override fun available(): Int = upstream.available()
-                        override fun skip(n: Long): Long = upstream.skip(n)
-                        override fun close() = upstream.close()
-                    }
-
-                    WebResourceResponse(mime, enc, proxyStream).apply {
-                        setStatusCodeAndReasonPhrase(code, resp.message)
-                        val headers = mutableMapOf<String, String>()
-                        resp.headers.forEach { header ->
-                            headers[header.first] = header.second
+                    LoadTarget.HTTP -> {
+                        val url = request.url.toString()
+                        logConnection(android.util.Log.DEBUG, "WEBREQ") {
+                            if (isMain) {
+                                "MAIN HTTP GET $url"
+                            } else {
+                                "HTTP GET $url"
+                            }
                         }
-                        responseHeaders = headers
+                        interceptRequestWithClient(url, request, applyHttpHeaders = true)
                     }
-                } catch (t: Throwable) {
-                    android.util.Log.e("WEBREQ", "Erro interceptando $url", t)
-                    null
+                    else -> null
                 }
             }
         }
+    }
+
+    private fun interceptRequestWithClient(
+        url: String,
+        request: WebResourceRequest,
+        applyHttpHeaders: Boolean
+    ): WebResourceResponse? {
+        return try {
+            val appliedHeaders = if (applyHttpHeaders) {
+                httpRequestHeaders()
+            } else {
+                null
+            }
+            logHttpEvent(
+                ConnEvent.Level.DEBUG,
+                "HTTP asset request → $url (headers=${appliedHeaders?.keys?.joinToString() ?: "none"})"
+            )
+            val builder = Request.Builder()
+                .url(url)
+                .header("Accept", request.requestHeaders["Accept"] ?: "*/*")
+                .header("User-Agent", request.requestHeaders["User-Agent"] ?: "WebView")
+                .apply {
+                    CookieManager.getInstance().getCookie(url)?.let {
+                        header("Cookie", it)
+                    }
+                    request.requestHeaders["Referer"]?.let { header("Referer", it) }
+                    request.requestHeaders["Cache-Control"]?.let { header("Cache-Control", it) }
+                    request.requestHeaders["If-Modified-Since"]?.let { header("If-Modified-Since", it) }
+                    request.requestHeaders["If-None-Match"]?.let { header("If-None-Match", it) }
+                    appliedHeaders?.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
+
+            val response = http.newCall(builder.build()).execute()
+            val body = response.body ?: run {
+                logHttpEvent(
+                    ConnEvent.Level.WARN,
+                    "HTTP asset request without body",
+                    code = response.code
+                )
+                response.closeQuietly()
+                return null
+            }
+            val code = response.code
+            val mime = response.header("Content-Type")?.substringBefore(";") ?: guessMime(url)
+            val enc = response.header("Content-Type")
+                ?.substringAfter("charset=", "")
+                ?.ifBlank { null }
+                ?: "utf-8"
+            val sizeHint = body.contentLength()
+            val respSource = when {
+                response.cacheResponse != null -> "cache"
+                response.networkResponse != null -> "net"
+                else -> "n/a"
+            }
+
+            logConnection(android.util.Log.DEBUG, "WEBRESP") {
+                "↩ ${code} ${mime} ${if (sizeHint >= 0) "${sizeHint}B" else "stream"} [$respSource] <- $url"
+            }
+            val eventLevel = if (code in 200..399) ConnEvent.Level.DEBUG else ConnEvent.Level.WARN
+            logHttpEvent(eventLevel, "HTTP asset response", code = code)
+
+            val upstream = body.byteStream()
+            val proxyStream = object : InputStream() {
+                override fun read(): Int = upstream.read()
+                override fun read(b: ByteArray): Int = upstream.read(b)
+                override fun read(b: ByteArray, off: Int, len: Int): Int = upstream.read(b, off, len)
+                override fun available(): Int = upstream.available()
+                override fun skip(n: Long): Long = upstream.skip(n)
+                override fun close() = upstream.close()
+            }
+
+            val reason = response.message.ifBlank { defaultReasonPhrase(code) }
+            WebResourceResponse(mime, enc, proxyStream).apply {
+                setStatusCodeAndReasonPhrase(code, reason)
+                val headers = mutableMapOf<String, String>()
+                response.headers.forEach { header ->
+                    headers[header.first] = header.second
+                }
+                responseHeaders = headers
+            }
+        } catch (t: Throwable) {
+            logHttpEvent(ConnEvent.Level.ERROR, "HTTP asset request failed", throwable = t)
+            android.util.Log.e("WEBREQ", "Erro interceptando $url", t)
+            null
+        }
+    }
+
+    private fun defaultReasonPhrase(code: Int): String = when (code) {
+        200 -> "OK"
+        201 -> "Created"
+        202 -> "Accepted"
+        204 -> "No Content"
+        301 -> "Moved Permanently"
+        302 -> "Found"
+        304 -> "Not Modified"
+        400 -> "Bad Request"
+        401 -> "Unauthorized"
+        403 -> "Forbidden"
+        404 -> "Not Found"
+        500 -> "Internal Server Error"
+        502 -> "Bad Gateway"
+        503 -> "Service Unavailable"
+        else -> "OK"
     }
 
     private fun registerStatusReceiver() {
@@ -1082,6 +1159,21 @@ class MainCoordinator(
         }
     }
 
+    private fun stopTunnelService() {
+        val appContext = activity.applicationContext
+        if (!TunnelService.isRunning()) {
+            pendingTunnelAction = null
+            return
+        }
+        val stopIntent = Intent(appContext, TunnelService::class.java).apply { action = Actions.STOP }
+        runCatching {
+            appContext.startService(stopIntent)
+        }.onFailure {
+            android.util.Log.w("WEBNAV", "Unable to stop tunnel service: ${it.message}")
+        }
+        pendingTunnelAction = null
+    }
+
     private fun startNtfyUpdates() {
         if (!::prefs.isInitialized) return
         if (prefs.ntfyFetchUserOverride == false || !prefs.ntfyFetchEnabled) {
@@ -1117,6 +1209,36 @@ class MainCoordinator(
         }
     }
 
+    private fun startFallbackWatchers(forceImmediate: Boolean) {
+        if (fallbackWatchersRunning) return
+        val appContext = activity.applicationContext
+        EndpointSyncWorker.schedulePeriodic(appContext)
+        if (forceImmediate) {
+            EndpointSyncWorker.enqueueImmediate(appContext)
+        }
+        startNtfyUpdates()
+        fallbackWatchersRunning = true
+    }
+
+    private fun stopFallbackWatchers() {
+        if (!fallbackWatchersRunning) {
+            stopNtfyUpdates()
+            pendingSseStart = false
+            EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
+            return
+        }
+        stopNtfyUpdates()
+        pendingSseStart = false
+        EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
+        fallbackWatchersRunning = false
+    }
+
+    private fun ensureFallbackWatchersRunning(forceImmediate: Boolean) {
+        if (!fallbackWatchersRunning) {
+            startFallbackWatchers(forceImmediate)
+        }
+    }
+
     private fun requestTunnelReconnect(force: Boolean = false) {
         val state = currentTunnelState
         val shouldForce = force || tunnelForceReconnectPending
@@ -1148,7 +1270,9 @@ class MainCoordinator(
     }
 
     private fun startPrimaryNavigation(force: Boolean) {
-        startTunnelServiceSafely()
+        if (shouldStartTunnelService()) {
+            startTunnelServiceSafely()
+        }
         tunnelAttempted = false
         resetReconnectState()
         startConnectionLoop(force)
@@ -1156,15 +1280,18 @@ class MainCoordinator(
 
     private fun resetReconnectState() {
         val hadState =
-            directReconnectAttempted || tunnelReconnectAttempted ||
-                directReconnectFailed || tunnelReconnectFailed ||
+            directReconnectAttempted || tunnelReconnectAttempted || httpReconnectAttempted ||
+                directReconnectFailed || tunnelReconnectFailed || httpReconnectFailed ||
                 offlineAssistEligibleAt != null || offlineAssistRunnable != null
         directReconnectAttempted = false
         tunnelReconnectAttempted = false
+        httpReconnectAttempted = false
         directReconnectFailed = false
         tunnelReconnectFailed = false
+        httpReconnectFailed = false
         offlineAssistEligibleAt = null
         cancelOfflineAssistVisibilityUpdate()
+        snapshotRetryTarget = preferredInitialTarget()
         if (hadState) {
             updateOfflineAssistVisibility()
         }
@@ -1183,6 +1310,16 @@ class MainCoordinator(
                     changed = true
                 }
             }
+            LoadTarget.HTTP -> {
+                if (!httpReconnectAttempted) {
+                    httpReconnectAttempted = true
+                    changed = true
+                }
+                if (!httpReconnectFailed) {
+                    httpReconnectFailed = true
+                    changed = true
+                }
+            }
             LoadTarget.TUNNEL -> {
                 if (!tunnelReconnectAttempted) {
                     tunnelReconnectAttempted = true
@@ -1194,7 +1331,10 @@ class MainCoordinator(
                 }
             }
         }
-        if (directReconnectFailed && tunnelReconnectFailed && offlineAssistEligibleAt == null) {
+        val directDone = !isDirectConfigured() || (directReconnectAttempted && directReconnectFailed)
+        val httpDone = !isHttpConfigured() || (httpReconnectAttempted && httpReconnectFailed)
+        val tunnelDone = tunnelReconnectFailed
+        if (directDone && httpDone && tunnelDone && offlineAssistEligibleAt == null) {
             offlineAssistEligibleAt = SystemClock.elapsedRealtime() + offlineAssistDelayMs
             scheduleOfflineAssistVisibilityUpdate(offlineAssistDelayMs)
             changed = true
@@ -1300,10 +1440,10 @@ class MainCoordinator(
                 }
             }
             var nextForce = force
-            var keepVisibleNext = keepWebVisible
+            var keepVisibleNext = keepWebVisible || showingCachedSnapshot
             while (isActive) {
-                val keepVisibleForAttempt = keepVisibleNext
-                keepVisibleNext = false
+                val keepVisibleForAttempt = keepVisibleNext || showingCachedSnapshot
+                keepVisibleNext = showingCachedSnapshot
                 if (showingCachedSnapshot) {
                     val target = snapshotRetryTarget
                     logConnection(
@@ -1311,6 +1451,7 @@ class MainCoordinator(
                         "WEBCONN"
                     ) { "Tentando recuperar snapshot via $target (force=$nextForce)" }
                     if (target == LoadTarget.TUNNEL) {
+                        ensureFallbackWatchersRunning(forceImmediate = true)
                         requestTunnelReconnect()
                         if (!awaitTunnelReady()) {
                             markReconnectFailure(target)
@@ -1321,69 +1462,102 @@ class MainCoordinator(
                     val available = isTargetReachable(target)
                     if (available) {
                         resetReconnectState()
-                        snapshotRetryTarget = LoadTarget.DIRECT
+                        snapshotRetryTarget = preferredInitialTarget()
                         recoverFromSnapshot(target)
                         startConnectionMonitor()
                         return@launch
                     }
                     markReconnectFailure(target)
-                    if (target == LoadTarget.DIRECT) {
+                    if (target != LoadTarget.TUNNEL) {
                         val state = currentTunnelState
                         if (state !is TunnelManager.State.Connected && state !is TunnelManager.State.Connecting) {
                             logConnection(
                                 android.util.Log.DEBUG,
                                 "WEBCONN"
-                            ) { "Snapshot -> conexão direta indisponível; solicitando túnel somente se inativo (state=$state)" }
+                            ) { "Snapshot -> alvo $target indisponível; solicitando túnel somente se inativo (state=$state)" }
                             tunnelForceReconnectPending = true
                         }
                     }
-                    snapshotRetryTarget = if (target == LoadTarget.DIRECT) {
-                        LoadTarget.TUNNEL
-                    } else {
-                        LoadTarget.DIRECT
-                    }
+                    snapshotRetryTarget = nextRetryTarget(target)
                     delay(connectionRetryDelayMs)
                     continue
                 }
 
-                val directAvailable = isTargetReachable(LoadTarget.DIRECT)
-                logConnection(
-                    android.util.Log.DEBUG,
-                    "WEBCONN"
-                ) { "Verificação direta -> $directAvailable (force=$nextForce)" }
-                if (directAvailable) {
-                    resetReconnectState()
-                    loadTarget(LoadTarget.DIRECT, nextForce, keepWebVisible = keepVisibleForAttempt)
-                    startConnectionMonitor()
-                    return@launch
-                } else {
-                    markReconnectFailure(LoadTarget.DIRECT)
-                    val state = currentTunnelState
-                    if (state !is TunnelManager.State.Connected && state !is TunnelManager.State.Connecting) {
-                        tunnelForceReconnectPending = true
+                var connectedTarget: LoadTarget? = null
+                val order = connectionOrder()
+                for (target in order) {
+                    when (target) {
+                        LoadTarget.DIRECT -> {
+                            val directAvailable = isTargetReachable(LoadTarget.DIRECT)
+                            logConnection(
+                                android.util.Log.DEBUG,
+                                "WEBCONN"
+                            ) { "Verificação direta -> $directAvailable (force=$nextForce)" }
+                            if (directAvailable) {
+                                resetReconnectState()
+                                loadTarget(LoadTarget.DIRECT, nextForce, keepWebVisible = keepVisibleForAttempt)
+                                connectedTarget = LoadTarget.DIRECT
+                                break
+                            } else {
+                                markReconnectFailure(LoadTarget.DIRECT)
+                                val state = currentTunnelState
+                                if (state !is TunnelManager.State.Connected && state !is TunnelManager.State.Connecting) {
+                                    tunnelForceReconnectPending = true
+                                }
+                            }
+                        }
+                        LoadTarget.HTTP -> {
+                            val httpAvailable = isTargetReachable(LoadTarget.HTTP)
+                            logConnection(
+                                android.util.Log.DEBUG,
+                                "WEBCONN"
+                            ) { "Verificação HTTP -> $httpAvailable (force=$nextForce)" }
+                            if (httpAvailable) {
+                                resetReconnectState()
+                                loadTarget(LoadTarget.HTTP, nextForce, keepWebVisible = keepVisibleForAttempt)
+                                connectedTarget = LoadTarget.HTTP
+                                break
+                            } else {
+                                markReconnectFailure(LoadTarget.HTTP)
+                                val state = currentTunnelState
+                                if (state !is TunnelManager.State.Connected && state !is TunnelManager.State.Connecting) {
+                                    tunnelForceReconnectPending = true
+                                }
+                            }
+                        }
+                        LoadTarget.TUNNEL -> {
+                            ensureFallbackWatchersRunning(forceImmediate = true)
+                            requestTunnelReconnect()
+                            if (!awaitTunnelReady()) {
+                                markReconnectFailure(LoadTarget.TUNNEL)
+                                break
+                            }
+                            val tunnelAvailable = isTargetReachable(LoadTarget.TUNNEL)
+                            logConnection(
+                                android.util.Log.DEBUG,
+                                "WEBCONN"
+                            ) { "Verificação túnel -> $tunnelAvailable (force=$nextForce)" }
+                            if (tunnelAvailable) {
+                                tunnelAttempted = true
+                                resetReconnectState()
+                                loadTarget(LoadTarget.TUNNEL, true, keepWebVisible = keepVisibleForAttempt)
+                                connectedTarget = LoadTarget.TUNNEL
+                                break
+                            } else {
+                                markReconnectFailure(LoadTarget.TUNNEL)
+                                EndpointSyncWorker.enqueueImmediate(activity.applicationContext)
+                            }
+                        }
                     }
                 }
 
-                requestTunnelReconnect()
-                if (!awaitTunnelReady()) {
-                    markReconnectFailure(LoadTarget.TUNNEL)
-                    delay(connectionRetryDelayMs)
-                    continue
-                }
-                val tunnelAvailable = isTargetReachable(LoadTarget.TUNNEL)
-                logConnection(
-                    android.util.Log.DEBUG,
-                    "WEBCONN"
-                ) { "Verificação túnel -> $tunnelAvailable (force=$nextForce)" }
-                if (tunnelAvailable) {
-                    tunnelAttempted = true
-                    resetReconnectState()
-                    loadTarget(LoadTarget.TUNNEL, true, keepWebVisible = keepVisibleForAttempt)
+                if (connectedTarget != null) {
+                    if (connectedTarget != LoadTarget.TUNNEL) {
+                        stopTunnelService()
+                        stopFallbackWatchers()
+                    }
                     startConnectionMonitor()
                     return@launch
-                } else {
-                    markReconnectFailure(LoadTarget.TUNNEL)
-                    EndpointSyncWorker.enqueueImmediate(activity.applicationContext)
                 }
 
                 delay(connectionRetryDelayMs)
@@ -1415,6 +1589,7 @@ class MainCoordinator(
                 delay(monitorIntervalMs)
                 if (connectionJob?.isActive == true) continue
 
+                val httpConfigured = isHttpConfigured()
                 val directAvailable = isTargetReachable(LoadTarget.DIRECT, silent = true)
                 if (directAvailable) {
                     if (showingCachedSnapshot) {
@@ -1422,7 +1597,7 @@ class MainCoordinator(
                             android.util.Log.DEBUG,
                             "WEBNAV"
                         ) { "Monitor: direct available while snapshot visible; recovering" }
-                        recoverFromSnapshot()
+                        recoverFromSnapshot(LoadTarget.DIRECT)
                         continue
                     }
                     if (currentTarget != LoadTarget.DIRECT) {
@@ -1434,11 +1609,53 @@ class MainCoordinator(
                         return@launch
                     }
                     continue
-                }
-
-                if (currentTarget == LoadTarget.DIRECT) {
+                } else if (currentTarget == LoadTarget.DIRECT) {
                     startConnectionLoop(force = true)
                     return@launch
+                }
+
+                if (!httpConfigured) {
+                    if (currentTarget == LoadTarget.HTTP) {
+                        logConnection(
+                            android.util.Log.INFO,
+                            "WEBNAV"
+                        ) { "HTTP desativado; alternando para alvo prioritário" }
+                        startConnectionLoop(force = true)
+                        return@launch
+                    }
+                    lastHttpProbeAt = 0L
+                } else {
+                    val now = SystemClock.elapsedRealtime()
+                    val shouldProbeHttp = currentTarget != LoadTarget.TUNNEL ||
+                        now - lastHttpProbeAt >= httpProbeIntervalWhileOnTunnelMs
+                    if (shouldProbeHttp) {
+                        if (currentTarget == LoadTarget.TUNNEL) {
+                            lastHttpProbeAt = now
+                        }
+                        val httpAvailable = isTargetReachable(LoadTarget.HTTP, silent = true)
+                        if (httpAvailable) {
+                            if (showingCachedSnapshot) {
+                                logConnection(
+                                    android.util.Log.DEBUG,
+                                    "WEBNAV"
+                                ) { "Monitor: HTTP available while snapshot visible; recovering" }
+                                recoverFromSnapshot(LoadTarget.HTTP)
+                                continue
+                            }
+                            if (currentTarget != LoadTarget.HTTP) {
+                                logConnection(
+                                    android.util.Log.DEBUG,
+                                    "WEBNAV"
+                                ) { "Monitor: switching to HTTP after health success" }
+                                startConnectionLoop(force = true)
+                                return@launch
+                            }
+                            continue
+                        } else if (currentTarget == LoadTarget.HTTP) {
+                            startConnectionLoop(force = true)
+                            return@launch
+                        }
+                    }
                 }
 
                 val tunnelAvailable = isTargetReachable(LoadTarget.TUNNEL, silent = true)
@@ -1462,6 +1679,9 @@ class MainCoordinator(
         if (target == LoadTarget.DIRECT && !isDirectConfigured()) {
             return false
         }
+        if (target == LoadTarget.HTTP && !isHttpConfigured()) {
+            return false
+        }
         val base = baseUrlFor(target)
         val (cookie, userAgent) = withContext(Dispatchers.Main.immediate) {
             val c = try {
@@ -1476,9 +1696,20 @@ class MainCoordinator(
             }
             c to (ua ?: "TunnelView/health")
         }
+        val extraHeader = if (target == LoadTarget.HTTP) {
+            val name = prefs.httpHeaderName
+            val value = prefs.httpHeaderValue
+            if (name.isBlank() || value.isBlank()) null else name to value
+        } else {
+            null
+        }
 
         return withContext(Dispatchers.IO) {
             try {
+                if (target == LoadTarget.HTTP && !silent) {
+                    val headerLabel = extraHeader?.first ?: "none"
+                    logHttpEvent(ConnEvent.Level.INFO, "HTTP health check → $base (header=$headerLabel)")
+                }
                 val request = Request.Builder()
                     .url(base)
                     .cacheControl(CacheControl.Builder().noCache().noStore().build())
@@ -1487,11 +1718,27 @@ class MainCoordinator(
                         if (!cookie.isNullOrEmpty()) {
                             header("Cookie", cookie)
                         }
+                        if (extraHeader != null) {
+                            header(extraHeader.first, extraHeader.second)
+                        }
                     }
                     .build()
                 val response = healthCheckClient.newCall(request).execute()
                 val code = response.code
-                val success = code in 100..599
+                val success = if (target == LoadTarget.HTTP) {
+                    code in 200..399
+                } else {
+                    code in 100..599
+                }
+                if (target == LoadTarget.HTTP && !silent) {
+                    val eventLevel = if (success) ConnEvent.Level.INFO else ConnEvent.Level.WARN
+                    val message = if (success) {
+                        "HTTP health check succeeded"
+                    } else {
+                        "HTTP health check returned unexpected status"
+                    }
+                    logHttpEvent(eventLevel, message, code = code)
+                }
                 response.closeQuietly()
                 if (target == LoadTarget.DIRECT) {
                     if (success) {
@@ -1515,6 +1762,13 @@ class MainCoordinator(
                         "Health $target failed: ${t.message}"
                     }
                 }
+                if (target == LoadTarget.HTTP && !silent) {
+                    logHttpEvent(
+                        ConnEvent.Level.WARN,
+                        "HTTP health check failed",
+                        throwable = t
+                    )
+                }
                 false
             }
         }
@@ -1526,14 +1780,24 @@ class MainCoordinator(
                 android.util.Log.DEBUG,
                 "WEBNAV"
             ) { "Conexão direta não configurada; carregando túnel" }
-            loadTarget(LoadTarget.TUNNEL, force, keepWebVisible)
+            loadTarget(fallbackTarget(LoadTarget.DIRECT), force, keepWebVisible)
+            return
+        }
+        if (target == LoadTarget.HTTP && !isHttpConfigured()) {
+            logConnection(
+                android.util.Log.DEBUG,
+                "WEBNAV"
+            ) { "Conexão HTTP não configurada; carregando fallback" }
+            loadTarget(fallbackTarget(LoadTarget.HTTP), force, keepWebVisible)
             return
         }
         currentTarget = target
-        if (target == LoadTarget.DIRECT) {
+        updateActiveConnectionIndicator(target)
+        if (target != LoadTarget.TUNNEL) {
             tunnelAttempted = false
             scheduleDirectFallback()
         } else {
+            tunnelAttempted = true
             cancelDirectFallback()
         }
         val wasShowingSnapshot = showingCachedSnapshot
@@ -1564,26 +1828,35 @@ class MainCoordinator(
         val alreadyOnDesired =
             !force && currentUrl != null && urlsEquivalent(currentUrl, desiredUrl)
         if (alreadyOnDesired) {
-            if (target == LoadTarget.DIRECT) {
+            if (target != LoadTarget.TUNNEL) {
                 cancelDirectFallback()
             }
             return
         }
-        webView.loadUrl(desiredUrl)
+        loadUrlForTarget(desiredUrl, target)
     }
 
-    private fun recoverFromSnapshot(target: LoadTarget = LoadTarget.DIRECT) {
-        val actualTarget = if (target == LoadTarget.DIRECT && !isDirectConfigured()) {
-            LoadTarget.TUNNEL
-        } else {
-            target
+    private fun recoverFromSnapshot(target: LoadTarget = preferredInitialTarget()) {
+        val actualTarget = when (target) {
+            LoadTarget.DIRECT -> if (isDirectConfigured()) {
+                LoadTarget.DIRECT
+            } else {
+                fallbackTarget(LoadTarget.DIRECT)
+            }
+            LoadTarget.HTTP -> if (isHttpConfigured()) {
+                LoadTarget.HTTP
+            } else {
+                fallbackTarget(LoadTarget.HTTP)
+            }
+            LoadTarget.TUNNEL -> LoadTarget.TUNNEL
         }
         resetReconnectState()
         showingCachedSnapshot = false
         pendingSnapshot = false
-        snapshotRetryTarget = LoadTarget.DIRECT
+        snapshotRetryTarget = preferredInitialTarget()
         currentTarget = actualTarget
-        if (actualTarget == LoadTarget.DIRECT) {
+        updateActiveConnectionIndicator(actualTarget)
+        if (actualTarget != LoadTarget.TUNNEL) {
             tunnelAttempted = false
             scheduleDirectFallback()
         } else {
@@ -1598,13 +1871,13 @@ class MainCoordinator(
             keepContentVisibleDuringLoad = true
             updateOfflineLoadingVisibility()
             webView.stopLoading()
-            webView.loadUrl("about:blank")
-            webView.postDelayed({
-                logConnection(android.util.Log.DEBUG, "WEBNAV") {
-                    "recoverFromSnapshot -> now loading $url"
-                }
-                webView.loadUrl(url)
-            }, 50L)
+                webView.loadUrl("about:blank")
+                webView.postDelayed({
+                    logConnection(android.util.Log.DEBUG, "WEBNAV") {
+                        "recoverFromSnapshot -> now loading $url"
+                    }
+                    loadUrlForTarget(url, actualTarget)
+                }, 50L)
         }
         updateOfflineAssistVisibility()
     }
@@ -1641,15 +1914,113 @@ class MainCoordinator(
     private fun baseUrlFor(target: LoadTarget): String =
         when (target) {
             LoadTarget.DIRECT -> directBaseUrl()
+            LoadTarget.HTTP -> httpBaseUrl()
             LoadTarget.TUNNEL -> tunnelBaseUrl()
         }
 
     private fun isDirectConfigured(): Boolean =
         !prefs.localIpEndpoint.isNullOrBlank()
 
+    private fun isHttpConfigured(): Boolean =
+        prefs.httpConnectionEnabled && prefs.httpAddress.isNotBlank()
+
     private fun directBaseUrl(): String {
         val manual = prefs.localIpEndpoint?.trim()?.takeIf { it.isNotEmpty() }
         return manual?.let { normalizeBase(it) } ?: tunnelBaseUrl()
+    }
+
+    private fun httpBaseUrl(): String {
+        val address = prefs.httpAddress.trim()
+        if (address.isEmpty()) return tunnelBaseUrl()
+        return normalizeBase(address)
+    }
+
+    private fun httpRequestHeaders(): Map<String, String>? {
+        if (!isHttpConfigured()) return null
+        val name = prefs.httpHeaderName
+        val value = prefs.httpHeaderValue
+        if (name.isBlank() || value.isBlank()) return null
+        return mapOf(name to value)
+    }
+
+    private fun loadUrlForTarget(url: String, target: LoadTarget) {
+        if (target == LoadTarget.HTTP) {
+            val headers = httpRequestHeaders()
+            if (headers != null) {
+                webView.loadUrl(url, headers)
+                return
+            }
+        }
+        webView.loadUrl(url)
+    }
+
+    private fun connectionOrder(): List<LoadTarget> {
+        val order = mutableListOf<LoadTarget>()
+        if (isDirectConfigured()) {
+            order += LoadTarget.DIRECT
+        }
+        if (isHttpConfigured()) {
+            order += LoadTarget.HTTP
+        }
+        order += LoadTarget.TUNNEL
+        return order
+    }
+
+    private fun shouldStartTunnelService(): Boolean =
+        preferredInitialTarget() == LoadTarget.TUNNEL
+
+    private fun preferredInitialTarget(): LoadTarget {
+        return when {
+            isDirectConfigured() -> LoadTarget.DIRECT
+            isHttpConfigured() -> LoadTarget.HTTP
+            else -> LoadTarget.TUNNEL
+        }
+    }
+
+    private fun fallbackTarget(from: LoadTarget): LoadTarget {
+        val baseOrder = listOf(LoadTarget.DIRECT, LoadTarget.HTTP, LoadTarget.TUNNEL)
+        val startIndex = baseOrder.indexOf(from).takeIf { it >= 0 } ?: 0
+        for (step in 1 until baseOrder.size) {
+            val candidate = baseOrder[(startIndex + step) % baseOrder.size]
+            when (candidate) {
+                LoadTarget.DIRECT -> if (isDirectConfigured()) return LoadTarget.DIRECT
+                LoadTarget.HTTP -> if (isHttpConfigured()) return LoadTarget.HTTP
+                LoadTarget.TUNNEL -> return LoadTarget.TUNNEL
+            }
+        }
+        return LoadTarget.TUNNEL
+    }
+
+    private fun nextRetryTarget(current: LoadTarget): LoadTarget {
+        val order = connectionOrder()
+        if (order.isEmpty()) return LoadTarget.TUNNEL
+        val index = order.indexOf(current)
+        return if (index == -1) {
+            order.first()
+        } else {
+            order[(index + 1) % order.size]
+        }
+    }
+
+    private fun logHttpEvent(
+        level: ConnEvent.Level,
+        message: String,
+        code: Int? = null,
+        throwable: Throwable? = null
+    ) {
+        lifecycleScope.launch {
+            connLogger.log(
+                ConnEvent(
+                    timestampMillis = System.currentTimeMillis(),
+                    level = level,
+                    phase = ConnEvent.Phase.HTTP,
+                    message = code?.let { "$message (code=$it)" } ?: message,
+                    throwableClass = throwable?.javaClass?.name,
+                    throwableMessage = throwable?.message,
+                    stacktracePreview = throwable?.stackTraceToString()?.take(600)
+                )
+            )
+        }
     }
 
     private fun tunnelBaseUrl(): String =
@@ -1658,14 +2029,21 @@ class MainCoordinator(
     private fun showCachedPage(html: String, baseUrl: String?) {
         showingCachedSnapshot = true
         keepContentVisibleDuringLoad = false
-        snapshotRetryTarget = LoadTarget.DIRECT
+        snapshotRetryTarget = preferredInitialTarget()
         hideFriendlyError()
         showContent()
         updateOfflineLoadingVisibility()
         updateOfflineAssistVisibility()
-        val base = normalizeBase(baseUrl ?: directBaseUrl())
-        currentTarget = LoadTarget.DIRECT
-        tunnelAttempted = false
+        val fallbackBase = when {
+            isDirectConfigured() -> directBaseUrl()
+            isHttpConfigured() -> httpBaseUrl()
+            else -> tunnelBaseUrl()
+        }
+        val base = normalizeBase(baseUrl ?: fallbackBase)
+        val initialTarget = preferredInitialTarget()
+        currentTarget = initialTarget
+        updateActiveConnectionIndicator(initialTarget)
+        tunnelAttempted = initialTarget == LoadTarget.TUNNEL
         cancelDirectFallback()
         pendingSnapshot = false
         val resolvedUrl = rebuildCachedUrl(base, prefs.cachedFullUrl, prefs.cachedRelativePath)
@@ -1706,16 +2084,22 @@ class MainCoordinator(
         }
         showingCachedSnapshot = true
         keepContentVisibleDuringLoad = false
-        snapshotRetryTarget = LoadTarget.DIRECT
+        snapshotRetryTarget = preferredInitialTarget()
         showContent()
         hideFriendlyError()
         updateOfflineLoadingVisibility()
         updateOfflineAssistVisibility()
-        currentTarget = LoadTarget.DIRECT
-        tunnelAttempted = false
+        val initialTarget = preferredInitialTarget()
+        currentTarget = initialTarget
+        updateActiveConnectionIndicator(initialTarget)
+        tunnelAttempted = initialTarget == LoadTarget.TUNNEL
         cancelDirectFallback()
         pendingSnapshot = false
-        val base = prefs.cachedBaseUrl?.let { normalizeBase(it) } ?: directBaseUrl()
+        val base = prefs.cachedBaseUrl?.let { normalizeBase(it) } ?: when {
+            isDirectConfigured() -> directBaseUrl()
+            isHttpConfigured() -> httpBaseUrl()
+            else -> tunnelBaseUrl()
+        }
         val resolvedUrl = rebuildCachedUrl(base, prefs.cachedFullUrl, prefs.cachedRelativePath)
         val rawUrl = prefs.cachedFullUrl ?: resolvedUrl
         lastSnapshotUrl = rawUrl
@@ -1870,6 +2254,34 @@ class MainCoordinator(
         return normalizedBase + rel.trimStart('/')
     }
 
+    private fun updateActiveConnectionIndicator(target: LoadTarget) {
+        val changed = lastAnnouncedTarget != target
+        if (target == LoadTarget.TUNNEL) {
+            if (changed) {
+                lastHttpProbeAt = SystemClock.elapsedRealtime()
+            }
+        } else {
+            lastHttpProbeAt = 0L
+        }
+        val messageRes = when (target) {
+            LoadTarget.DIRECT -> R.string.connection_mode_direct
+            LoadTarget.HTTP -> R.string.connection_mode_http
+            LoadTarget.TUNNEL -> R.string.connection_mode_tunnel
+        }
+        val url = baseUrlFor(target)
+        val message = activity.getString(messageRes, url)
+        if (::toolbar.isInitialized) {
+            toolbar.subtitle = message
+        }
+        if (changed && !showingCachedSnapshot && ::rootView.isInitialized) {
+            rootView.shortSnack(message)
+        }
+        logConnection(android.util.Log.INFO, "WEBCONN") {
+            "Modo de conexão ativo: $target -> $url"
+        }
+        lastAnnouncedTarget = target
+    }
+
     private fun baseFrom(url: String): String {
         return try {
             val uri = Uri.parse(url)
@@ -1902,8 +2314,8 @@ class MainCoordinator(
     private fun scheduleDirectFallback() {
         cancelDirectFallback()
         val runnable = Runnable {
-            if (currentTarget == LoadTarget.DIRECT && !tunnelAttempted) {
-                android.util.Log.w("WEBNAV", "Direct load timeout; switching to tunnel")
+            if (currentTarget != LoadTarget.TUNNEL && !tunnelAttempted) {
+                android.util.Log.w("WEBNAV", "Primary load timeout ($currentTarget); switching to tunnel")
                 tunnelAttempted = true
                 startConnectionLoop(force = true)
             }
@@ -1918,7 +2330,7 @@ class MainCoordinator(
     }
 
     private fun shouldFallbackToTunnel(errorCode: Int): Boolean {
-        if (currentTarget != LoadTarget.DIRECT || tunnelAttempted) return false
+        if (currentTarget == LoadTarget.TUNNEL || tunnelAttempted) return false
         return when (errorCode) {
             WebViewClient.ERROR_CONNECT,
             WebViewClient.ERROR_TIMEOUT,

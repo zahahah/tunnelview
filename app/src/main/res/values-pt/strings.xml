@@ -50,6 +50,9 @@
     <string name="tunnel_status_reconnecting">Reconectando túnel…</string>
     <string name="tunnel_status_connected">Conectado: localhost:%1$d</string>
     <string name="tunnel_status_local_active">Conexão local ativa</string>
+    <string name="connection_mode_direct">Conexão direta: %1$s</string>
+    <string name="connection_mode_http">HTTP direto: %1$s</string>
+    <string name="connection_mode_tunnel">Túnel SSH: %1$s</string>
     <string name="tunnel_status_error">Erro: %1$s</string>
     <string name="tunnel_status_error_generic">Erro desconhecido</string>
     <string name="post_notifications_denied">Permissão de notificações negada; não foi possível
@@ -83,6 +86,12 @@
     <string name="settings_section_network_title">Rede e host interno remoto</string>
     <string name="settings_section_network_description">Ajuste o host interno remoto, a porta local e
         configure o acesso direto.</string>
+    <string name="settings_section_http_title">Conectar por um endereço HTTP</string>
+    <string name="settings_section_http_description">Use esse endereço seguro quando a conexão direta não puder ser usada.</string>
+    <string name="settings_http_enable_label">Habilitar conexão usando este endereço HTTP</string>
+    <string name="settings_http_address_label">Endereço HTTP</string>
+    <string name="settings_http_header_label">Nome do cabeçalho (opcional)</string>
+    <string name="settings_http_key_label">Valor do cabeçalho (opcional)</string>
     <string name="direct_access_button_label">Acessar por conexão direta</string>
     <string name="direct_access_info">A página será acessada sem túnel. Caso habilitado e os campos
         forem deixado em branco, o IP interno e porta serão implicitamente utilizados para conexão
@@ -141,6 +150,12 @@
     <string name="app_builder_default_port_placeholder">ex.: 3000</string>
     <string name="app_builder_default_local_port_label">Porta local padrão</string>
     <string name="app_builder_default_local_port_placeholder">ex.: 8090</string>
+    <string name="app_builder_default_http_address_label">Endereço HTTP padrão</string>
+    <string name="app_builder_default_http_address_placeholder">https://exemplo.com</string>
+    <string name="app_builder_default_http_header_label">Cabeçalho HTTP padrão</string>
+    <string name="app_builder_default_http_header_placeholder">ex.: X-App-Key</string>
+    <string name="app_builder_default_http_key_label">Valor do cabeçalho HTTP padrão</string>
+    <string name="app_builder_default_http_key_placeholder">Valor enviado no cabeçalho (opcional)</string>
     <string name="app_builder_default_port_error">Informe um número entre 1 e 65535 ou deixe o campo
         em branco.</string>
     <string name="app_builder_default_ssh_user_label">Usuário SSH padrão</string>
@@ -202,6 +217,10 @@
     <string name="diagnostics_state_idle">Inativo</string>
     <string name="diagnostics_attempts">Tentativas consecutivas: %1$d</string>
     <string name="diagnostics_force_ipv4">Forçar IPv4: %1$s</string>
+    <string name="diagnostics_http_enabled">Conexão HTTP: %1$s</string>
+    <string name="diagnostics_http_address">Endereço HTTP: %1$s</string>
+    <string name="diagnostics_http_header">Cabeçalho HTTP: %1$s</string>
+    <string name="diagnostics_http_key_state">Chave HTTP configurada: %1$s</string>
     <string name="diagnostics_yes">Sim</string>
     <string name="diagnostics_no">Não</string>
     <string name="diagnostics_timeouts">Timeouts (conexão/leitura/keepalive): %1$d s / %2$d s / %3$d

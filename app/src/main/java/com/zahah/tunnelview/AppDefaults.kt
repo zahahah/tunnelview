@@ -12,6 +12,10 @@ data class AppDefaults(
     val directHost: String,
     val directPort: String,
     val localPort: String,
+    val httpAddress: String,
+    val httpHeader: String,
+    val httpKey: String,
+    val httpEnabled: Boolean,
     val sshUser: String,
     val gitRepoUrl: String,
     val gitFilePath: String,
@@ -53,6 +57,10 @@ object AppDefaultsProvider {
                         directHost = json.optString("directHost", base.directHost).ifBlank { base.directHost },
                         directPort = json.optString("directPort", base.directPort).ifBlank { base.directPort },
                         localPort = json.optString("localPort", base.localPort).ifBlank { base.localPort },
+                        httpAddress = json.optString("httpAddress", base.httpAddress).ifBlank { base.httpAddress },
+                        httpHeader = json.optString("httpHeader", base.httpHeader).ifBlank { base.httpHeader },
+                        httpKey = json.optString("httpKey", base.httpKey).ifBlank { base.httpKey },
+                        httpEnabled = json.optBoolean("httpEnabled", base.httpEnabled),
                         sshUser = json.optString("sshUser", base.sshUser).ifBlank { base.sshUser },
                         gitRepoUrl = json.optString("gitRepoUrl", base.gitRepoUrl).ifBlank { base.gitRepoUrl },
                         gitFilePath = json.optString("gitFilePath", base.gitFilePath).ifBlank { base.gitFilePath },
@@ -70,12 +78,17 @@ object AppDefaultsProvider {
     private fun fallback(): AppDefaults {
         val decodeMultiline: (String) -> String = { it.replace("\\n", "\n") }
         val defaultLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty().ifBlank { "8090" }
+        val defaultHttpAddress = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty()
         return AppDefaults(
             remoteInternalHost = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty(),
             remoteInternalPort = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty(),
             directHost = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty(),
             directPort = BuildConfig.DEFAULT_DIRECT_PORT.orEmpty(),
             localPort = defaultLocalPort,
+            httpAddress = defaultHttpAddress,
+            httpHeader = BuildConfig.DEFAULT_HTTP_HEADER.orEmpty(),
+            httpKey = BuildConfig.DEFAULT_HTTP_KEY.orEmpty(),
+            httpEnabled = defaultHttpAddress.isNotBlank(),
             sshUser = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
             gitRepoUrl = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
             gitFilePath = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),

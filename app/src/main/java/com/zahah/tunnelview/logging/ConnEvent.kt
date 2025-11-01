@@ -24,6 +24,7 @@ data class ConnEvent(
 
     enum class Phase {
         DNS,
+        HTTP,
         TCP,
         SSH_HANDSHAKE,
         AUTH,
