@@ -2,14 +2,14 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/action_open_settings"
-        android:title="Configurações"
+        android:title="@string/menu_settings"
         android:showAsAction="never" />
     <item
         android:id="@+id/action_open_ntfy"
-        android:title="Abrir ntfy.sh"
+        android:title="@string/menu_open_ntfy"
         android:showAsAction="never" />
     <item
         android:id="@+id/action_open_diagnostics"
-        android:title="Diagnóstico"
+        android:title="@string/menu_diagnostics"
         android:showAsAction="never" />
 </menu>

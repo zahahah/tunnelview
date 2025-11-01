@@ -6,7 +6,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 
 - **Always-on SSH forwarding** – `TunnelService` + `TunnelManager` keep a local port open (default `8090`) and reconnect with smart backoff, IPv4 forcing, host-key pinning, and stateful notifications.
 - **Dynamic endpoints** – The app listens to `ntfy.sh` topics over SSE/WebSockets (`NtfySseService`) and periodically syncs a fallback host:port from HTTP or private Git (`EndpointSyncWorker` + `GitEndpointFetcher`), so technicians can rotate tunnels remotely.
-- **Resilient browsing experience** – `MainCoordinator` toggles between direct LAN access and the tunnel, caches full HTML snapshots for offline mode, keeps uploads/downloads working, and exposes quick troubleshooting actions.
+- **Resilient browsing experience** – `MainCoordinator` toggles between direct connection, HTTP endpoints, and the tunnel, surfaces the active target in the toolbar/snackbar, probes HTTP paths every 10 s while on SSH so it can promote faster routes automatically, caches full HTML snapshots for offline mode, keeps uploads/downloads working, and exposes quick troubleshooting actions.
 - **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs.
 - **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings.
 
@@ -30,7 +30,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - `app/src/main/java/com/zahah/tunnelview/ui/` – WebView coordinator, Compose settings, diagnostics screen.
 - `app/src/main/java/com/zahah/tunnelview/appbuilder/` – Runtime APK builder invoked from Settings.
 - `app/src/main/res/` – Layouts, Material theming, localized strings (English + Brazilian/Portuguese), and raw PEM placeholders (`id_ed25519`, `id_ed25519_git`).
-- `.env.example` – Template for build-time defaults injected into `BuildConfig`.
+- `.env.example` – Template for build-time defaults injected into `BuildConfig` (SSH, direct/HTTP endpoints, Git, etc.).
 
 ## Requirements
 
@@ -50,15 +50,17 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 2. **Create `.env` (build-time defaults)**  
    Copy `.env.example` and fill in as needed. These values are baked into `BuildConfig` and surfaced by `AppDefaultsProvider` when the user has not customized settings yet.
 
-   | Key                                               | Description                                                                                                                |
-   | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-   | `DEFAULT_SSH_PRIVATE_KEY_PATH`                    | Path to a PEM file (relative to repo) containing the default tunnel key. Shipping keys live under `app/src/main/res/raw/`. |
-   | `DEFAULT_GIT_PRIVATE_KEY_PATH`                    | PEM to reach the fallback Git repo.                                                                                        |
-| `DEFAULT_REMOTE_INTERNAL_HOST` / `DEFAULT_REMOTE_INTERNAL_PORT` | Remote internal web host/port the tunnel forwards to (e.g. `192.168.0.7:3000`).                                      |
-| `DEFAULT_DIRECT_HOST` / `DEFAULT_DIRECT_PORT`     | Direct LAN host/port used for the no-tunnel health check and prefilled in Settings.                                         |
-| `DEFAULT_LOCAL_PORT`                              | Local loopback port exposed on the device (default `8090`).                                                                |
-| `DEFAULT_SSH_USER`                                | Default Linux user for the bastion.                                                                                        |
-   | `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`  | Optional Git repo + file that holds the latest endpoint payload.                                                           |
+| Key                                                             | Description                                                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_SSH_PRIVATE_KEY_PATH`                                  | Path to a PEM file (relative to repo) containing the default tunnel key. Shipping keys live under `app/src/main/res/raw/`. |
+| `DEFAULT_GIT_PRIVATE_KEY_PATH`                                  | PEM to reach the fallback Git repo.                                                                                        |
+| `DEFAULT_REMOTE_INTERNAL_HOST` / `DEFAULT_REMOTE_INTERNAL_PORT` | Remote internal web host/port the tunnel forwards to (e.g. `192.168.0.7:3000`).                                            |
+| `DEFAULT_DIRECT_HOST` / `DEFAULT_DIRECT_PORT`                   | Direct connection host/port used for the no-tunnel health check and prefilled in Settings.                                 |
+| `DEFAULT_HTTP_ADDRESS`                                          | Optional HTTP URL used for “HTTP mode” (e.g. ngrok/Cloudflare tunnel endpoint).                                            |
+| `DEFAULT_HTTP_HEADER` / `DEFAULT_HTTP_KEY`                      | Header name/value automatically attached to HTTP requests (useful for auth tokens).                                        |
+| `DEFAULT_LOCAL_PORT`                                            | Local loopback port exposed on the device (default `8090`).                                                                |
+| `DEFAULT_SSH_USER`                                              | Default Linux user for the bastion.                                                                                        |
+| `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`                | Optional Git repo + file that holds the latest endpoint payload.                                                           |
 
 3. **Provide PEM files (never commit production keys)**
 
@@ -79,7 +81,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 ### WebView + Offline UX
 
 - `MainCoordinator` owns the single WebView, toolbar, offline banner, and floating "offline info" action. It applies the hardened defaults from `WebViewConfigurator`.
-- Each navigation cycle tries a **direct LAN URL first**, then falls back to the SSH tunnel URL (`http://127.0.0.1:<localPort>`). When both fail, the last good HTML snapshot stored under `files/offline-cache/` is displayed and users can force-refresh or open Settings.
+- Each navigation cycle tries a **direct connection URL → HTTP endpoint (if enabled) → SSH tunnel (`http://127.0.0.1:<localPort>`)**. When all paths fail, the last good HTML snapshot stored under `files/offline-cache/` is displayed and users can force-refresh or open Settings.
 - File uploads/downloads, geolocation prompts, and notification permission requests are delegated through `ActivityResultContracts`, so most modern cashier pages behave like Chrome Custom Tabs.
 
 ### SSH Tunnel Lifecycle
@@ -94,7 +96,14 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - **ntfy SSE/WebSocket** – `NtfySseService` listens to a topic (or a direct `wss://` endpoint) and feeds raw payloads into `NtfySubscriber`, which in turn updates `ProxyRepository`. Payloads can be simple `host:port`, `tcp://` strings, or JSON envelopes (parsed by `EndpointPayloadParser`).
 - **HTTP fallback** – Configure a URL plus bearer/access token inside Settings → Remote Updates. `EndpointSyncWorker` fetches the first non-empty line, validates it, and publishes it when ntfy is unavailable.
 - **Git fallback** – When a Git repo is set, the worker first tries `raw.githubusercontent.com` and, if needed, clones the repo over SSH (using the bundled git key) to read the target file.
-- **Manual overrides** – Users can pin a host/port + SSH bastion in Settings; `ProxyRepository` honors the manual choice until a grace period passes.
+- **Manual overrides** – Users can pin a host/port + SSH bastion in Settings; `ProxyRepository` honors the manual choice until a grace period passes. Clearing the SSH host/port now keeps the override flag set so fallback endpoints do not immediately repopulate the fields.
+
+### Direct vs HTTP vs tunnel
+
+- The navigator always prefers **Direct connection → HTTP endpoint → SSH tunnel** in that order. You can configure each path under Settings → Network.
+- HTTP mode is optional: enable the checkbox and provide an address/header/value. When HTTP is disabled or cleared, the app instantly falls back to direct/tunnel without waiting for a probe cycle.
+- While operating over SSH, the connection monitor executes an HTTP health check every 10 seconds; a success promotes the session back to HTTP automatically.
+- The active target (including full URL) is surfaced in the toolbar subtitle and via snackbars whenever a switch occurs.
 
 ### Background workers & notifications
 
@@ -103,13 +112,14 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 
 ### App Builder
 
-- Accessible under **Settings → App Builder**. You can define a new app name, package id, default hosts/keys, and upload a foreground icon.
+- Accessible under **Settings → App Builder**. You can define a new app name, package id, default hosts/keys (including HTTP address/header/value), and upload a foreground icon.
 - Behind the scenes `TemplateAppBuilder` unpacks `build/generated/baseTemplate/base_template_apk.tar`, patches the manifest/resources (`ManifestPatcher`), replaces `app_defaults.json`, signs the APK (either with an auto-generated RSA pair or your own PEMs), and saves it to the system Downloads folder via `FileProvider`.
 - After code changes, regenerate the base template by running `./gradlew assembleTemplate packageBaseTemplateApk` so the builder works with the latest binaries.
 
 ### Diagnostics, logging, and localization
 
-- Use the toolbar menu → **Diagnóstico** to open `ConnectionDiagnosticsActivity` where you can inspect the latest endpoint, tunnel state, recent `ConnLogger` events, and even run an on-device handshake test.
+- Use the toolbar menu → **Diagnostics** to open `ConnectionDiagnosticsActivity` where you can inspect the latest endpoint, tunnel state, recent `ConnLogger` events, and even run an on-device handshake test.
+- Diagnostics now highlight the active target (Direct/HTTP/Tunnel) and display the last HTTP health check response for quicker troubleshooting.
 - Settings are localized (English and Brazilian Portuguese) and can force the UI language without changing system locales (`AppLocaleManager`).
 - Advanced switches include caching the last page, forcing IPv4, toggling persistent notifications, enabling verbose connection logs, automatic settings saving, and adjusting SSH connect/read/keepalive timeouts.
 
@@ -149,7 +159,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - **Tunnel never leaves “Waiting for endpoint”** – Confirm the ntfy topic or fallback URL in Settings and check the diagnostics screen for the last payload. `ProxyRepository` logs every applied endpoint; look under `storage/connection_events.json`.
 - **Foreground service stopped immediately** – On Android 13+, make sure the `POST_NOTIFICATIONS` permission dialog was accepted; otherwise the OS will kill `TunnelService`.
 - **Git fallback fails with auth errors** – Validate the PEM at `DEFAULT_GIT_PRIVATE_KEY_PATH` (or the value stored in Settings) and confirm the repo URL uses the `git@` syntax so SSH keys take effect.
-- **Direct LAN keeps winning over tunnel** – Disable “Use manual endpoint” in Settings or clear `local LAN host/port` if you want to force tunnel traffic.
+- **Direct connection keeps winning over tunnel** – Disable “Use manual endpoint” in Settings or clear the direct host/port if you want to force tunnel traffic.
 - **Offline snapshot outdated** – Toggle “Cache last page” to refresh automatically, or tap the floating offline info button and hit “Force reload” once connectivity returns.
 - **App Builder missing base template** – Re-run `./gradlew assembleTemplate packageBaseTemplateApk` so `build/generated/baseTemplate/base_template_apk.tar` exists before opening the builder UI.
 

@@ -158,6 +158,9 @@
     <string name="app_builder_default_http_header_placeholder">e.g. X-App-Key</string>
     <string name="app_builder_default_http_key_label">Default HTTP header value</string>
     <string name="app_builder_default_http_key_placeholder">Value sent in the header (optional)</string>
+    <string name="menu_settings">Settings</string>
+    <string name="menu_open_ntfy">Open ntfy.sh</string>
+    <string name="menu_diagnostics">Diagnostics</string>
     <string name="app_builder_default_port_error">Enter a number between 1 and 65535 or leave the
         field blank.</string>
     <string name="app_builder_default_ssh_user_label">Default SSH user</string>
