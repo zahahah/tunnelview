@@ -377,8 +377,12 @@ class Prefs(ctx: Context) {
         set(value) = sp.edit { putBoolean("persistentNotificationEnabled", value) }
 
     var connectionDebugLoggingEnabled: Boolean
-        get() = sp.getBoolean("connectionDebugLoggingEnabled", false)
-        set(value) = sp.edit { putBoolean("connectionDebugLoggingEnabled", value) }
+        get() = sp.getBoolean(KEY_CONNECTION_DEBUG_LOGGING, false)
+        set(value) = sp.edit { putBoolean(KEY_CONNECTION_DEBUG_LOGGING, value) }
+
+    var lastSuccessfulGitSyncAtMillis: Long
+        get() = sp.getLong(KEY_LAST_GIT_SYNC_AT, 0L)
+        set(value) = sp.edit { putLong(KEY_LAST_GIT_SYNC_AT, value) }
 
     var forceIpv4: Boolean
         get() = sp.getBoolean(KEY_FORCE_IPV4, false)
@@ -446,6 +450,8 @@ class Prefs(ctx: Context) {
         private const val KEY_HTTP_HEADER = "httpHeaderName"
         private const val KEY_HTTP_KEY = "httpHeaderValue"
         private const val KEY_DIRECT_ENABLED = "directConnectionEnabled"
+        const val KEY_CONNECTION_DEBUG_LOGGING = "connectionDebugLoggingEnabled"
+        private const val KEY_LAST_GIT_SYNC_AT = "gitFallbackLastSuccessAt"
         private const val DEFAULT_TIMEOUT_SECONDS = 20
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
         private const val MIN_TIMEOUT_SECONDS = 15

@@ -169,6 +169,8 @@ fun SettingsScreen(
     val appBuilder = remember { TemplateAppBuilder(context) }
     var builderAppName by rememberSaveable { mutableStateOf("") }
     var builderPackage by rememberSaveable { mutableStateOf("") }
+    var builderVersionName by rememberSaveable { mutableStateOf(BuildConfig.VERSION_NAME) }
+    var builderVersionCode by rememberSaveable { mutableStateOf(BuildConfig.VERSION_CODE.toString()) }
     var builderRemoteInternalHost by rememberSaveable { mutableStateOf(appDefaults.remoteInternalHost) }
     var builderRemoteInternalPort by rememberSaveable { mutableStateOf(appDefaults.remoteInternalPort) }
     var builderDefaultDirectHost by rememberSaveable { mutableStateOf(appDefaults.directHost) }
@@ -197,6 +199,7 @@ fun SettingsScreen(
     var builderPortError by remember { mutableStateOf<String?>(null) }
     var builderDirectPortError by remember { mutableStateOf<String?>(null) }
     var builderLocalPortError by remember { mutableStateOf<String?>(null) }
+    var builderVersionCodeError by remember { mutableStateOf<String?>(null) }
     var includeBaseTemplate by rememberSaveable { mutableStateOf(builderEnabled) }
 
     val iconPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -447,6 +450,8 @@ fun SettingsScreen(
     fun triggerAppBuild() {
         val trimmedName = builderAppName.trim()
         val trimmedPackage = builderPackage.trim()
+        val trimmedVersionName = builderVersionName.trim()
+        val trimmedVersionCode = builderVersionCode.trim()
         val trimmedRemoteInternalHost = builderRemoteInternalHost.trim()
         val trimmedRemoteInternalPort = builderRemoteInternalPort.trim()
         val trimmedDefaultDirectHost = builderDefaultDirectHost.trim()
@@ -461,6 +466,19 @@ fun SettingsScreen(
         val trimmedDefaultSshKey = builderDefaultSshKey.trim()
         val trimmedDefaultGitKey = builderDefaultGitKey.trim()
         val trimmedDefaultSettingsPassword = builderDefaultSettingsPassword.trim()
+        val effectiveVersionName = trimmedVersionName.ifBlank { BuildConfig.VERSION_NAME }
+        builderVersionCodeError = null
+        val effectiveVersionCode = if (trimmedVersionCode.isBlank()) {
+            BuildConfig.VERSION_CODE
+        } else {
+            trimmedVersionCode.toIntOrNull()?.takeIf { it > 0 } ?: run {
+                val versionError = context.getString(R.string.app_builder_version_code_error)
+                builderVersionCodeError = versionError
+                builderError = versionError
+                builderStatus = null
+                return
+            }
+        }
         if (!PACKAGE_NAME_REGEX.matches(trimmedPackage)) {
             builderError = context.getString(R.string.app_builder_invalid_package)
             builderStatus = null
@@ -515,6 +533,8 @@ fun SettingsScreen(
         builderDefaultSshKey = trimmedDefaultSshKey
         builderDefaultGitKey = trimmedDefaultGitKey
         builderDefaultSettingsPassword = trimmedDefaultSettingsPassword
+        builderVersionName = effectiveVersionName
+        builderVersionCode = effectiveVersionCode.toString()
         builderError = null
         builderStatus = context.getString(R.string.app_builder_status_in_progress)
         builderResult = null
@@ -528,6 +548,8 @@ fun SettingsScreen(
                     AppBuildRequest(
                         appName = trimmedName,
                         packageName = trimmedPackage,
+                        versionName = effectiveVersionName,
+                        versionCode = effectiveVersionCode,
                         defaultRemoteInternalHost = trimmedRemoteInternalHost,
                         defaultRemoteInternalPort = trimmedRemoteInternalPort,
                         defaultDirectHost = trimmedDefaultDirectHost,
@@ -789,6 +811,9 @@ fun SettingsScreen(
                     appName = builderAppName,
                     packageName = builderPackage,
                     packageValid = builderPackage.isBlank() || PACKAGE_NAME_REGEX.matches(builderPackage),
+                    versionName = builderVersionName,
+                    versionCode = builderVersionCode,
+                    versionCodeError = builderVersionCodeError,
                     statusMessage = builderStatus,
                     errorMessage = builderError,
                     resultPath = builderResult?.fileName,
@@ -820,6 +845,11 @@ fun SettingsScreen(
                     },
                     onAppNameChange = { builderAppName = it },
                     onPackageChange = { builderPackage = it },
+                    onVersionNameChange = { builderVersionName = it },
+                    onVersionCodeChange = {
+                        builderVersionCode = it
+                        builderVersionCodeError = null
+                    },
                     onDefaultHostChange = { builderRemoteInternalHost = it },
                     onDefaultPortChange = {
                         builderRemoteInternalPort = it
@@ -1807,6 +1837,9 @@ private fun AppBuilderPage(
     appName: String,
     packageName: String,
     packageValid: Boolean,
+    versionName: String,
+    versionCode: String,
+    versionCodeError: String?,
     statusMessage: String?,
     errorMessage: String?,
     resultPath: String?,
@@ -1834,6 +1867,8 @@ private fun AppBuilderPage(
     onBack: () -> Unit,
     onAppNameChange: (String) -> Unit,
     onPackageChange: (String) -> Unit,
+    onVersionNameChange: (String) -> Unit,
+    onVersionCodeChange: (String) -> Unit,
     onDefaultHostChange: (String) -> Unit,
     onDefaultPortChange: (String) -> Unit,
     onDefaultDirectHostChange: (String) -> Unit,
@@ -1890,6 +1925,35 @@ private fun AppBuilderPage(
                 if (packageName.isNotBlank() && !packageValid) {
                     Text(
                         text = stringResource(id = R.string.app_builder_invalid_package),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        )
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = versionName,
+            onValueChange = onVersionNameChange,
+            label = { Text(text = stringResource(id = R.string.app_builder_version_name_label)) },
+            placeholder = { Text(text = stringResource(id = R.string.app_builder_version_name_placeholder)) },
+            singleLine = true,
+            enabled = !isBuilding
+        )
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = versionCode,
+            onValueChange = onVersionCodeChange,
+            label = { Text(text = stringResource(id = R.string.app_builder_version_code_label)) },
+            placeholder = { Text(text = stringResource(id = R.string.app_builder_version_code_placeholder)) },
+            singleLine = true,
+            enabled = !isBuilding,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            isError = versionCodeError != null,
+            supportingText = {
+                if (versionCodeError != null) {
+                    Text(
+                        text = versionCodeError,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )

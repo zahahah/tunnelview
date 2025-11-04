@@ -61,8 +61,13 @@ class TemplateAppBuilder(private val context: Context) {
     suspend fun build(request: AppBuildRequest): AppBuildResult = withContext(Dispatchers.IO) {
         val sanitizedName = request.appName.trim()
         val sanitizedPackage = request.packageName.trim()
+        val sanitizedVersionName = request.versionName.trim().ifBlank { BuildConfig.VERSION_NAME }
         require(sanitizedName.isNotBlank()) { "Nome do app não pode ser vazio" }
         require(PACKAGE_REGEX.matches(sanitizedPackage)) { "Nome de pacote inválido" }
+        require(sanitizedVersionName.isNotBlank()) { "Nome da versão não pode ser vazio" }
+        val versionCode = request.versionCode.takeIf { it > 0 }
+            ?: BuildConfig.VERSION_CODE.takeIf { it > 0 }
+            ?: 1
 
         val workDir = File(context.filesDir, WORK_DIR_NAME).apply { mkdirs() }
         val baseApk = File(workDir, "base-template.apk")
@@ -75,7 +80,13 @@ class TemplateAppBuilder(private val context: Context) {
             zip.getInputStream(manifestEntry).use { it.readBytes() }
         }
 
-        val patchedManifest = ManifestPatcher.patch(manifestBytes, sanitizedPackage, sanitizedName)
+        val patchedManifest = ManifestPatcher.patch(
+            manifestBytes,
+            sanitizedPackage,
+            sanitizedName,
+            sanitizedVersionName,
+            versionCode
+        )
         val iconAssets = prepareIconAssets(request.iconBytes, request.iconMimeType)
         val extraEntries = mutableMapOf<String, ByteArray>()
         buildAppDefaultsPayload(request)?.let { payload ->
@@ -101,7 +112,7 @@ class TemplateAppBuilder(private val context: Context) {
         }
         unsignedApk.delete()
 
-        val fileDisplayName = buildFileName(sanitizedName)
+        val fileDisplayName = buildFileName(sanitizedName, sanitizedVersionName)
         val downloadUri = saveToDownloads(signedApk, fileDisplayName)
         signedApk.delete()
 
@@ -590,7 +601,7 @@ class TemplateAppBuilder(private val context: Context) {
         }
     }
 
-    private fun buildFileName(appName: String): String {
+    private fun buildFileName(appName: String, versionName: String): String {
         val sanitized = appName.lowercase(Locale.getDefault())
             .map { ch ->
                 when {
@@ -602,7 +613,21 @@ class TemplateAppBuilder(private val context: Context) {
             .joinToString("")
             .trim('_')
             .ifBlank { "custom_app" }
-        return "$sanitized.apk"
+        val sanitizedVersion = versionName.lowercase(Locale.getDefault())
+            .map { ch ->
+                when {
+                    ch.isLetterOrDigit() -> ch
+                    ch == '.' || ch == '-' -> ch
+                    else -> '_'
+                }
+            }
+            .joinToString("")
+            .trim('_', '-', '.')
+        return if (sanitizedVersion.isNotEmpty()) {
+            "$sanitized-$sanitizedVersion.apk"
+        } else {
+            "$sanitized.apk"
+        }
     }
 
     private fun grantUriPermissionToInstallers(uri: Uri, intent: Intent) {
@@ -646,6 +671,8 @@ class TemplateAppBuilder(private val context: Context) {
 data class AppBuildRequest(
     val appName: String,
     val packageName: String,
+    val versionName: String = BuildConfig.VERSION_NAME,
+    val versionCode: Int = BuildConfig.VERSION_CODE,
     val defaultRemoteInternalHost: String = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty(),
     val defaultRemoteInternalPort: String = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty(),
     val defaultDirectHost: String = BuildConfig.DEFAULT_DIRECT_HOST.orEmpty(),

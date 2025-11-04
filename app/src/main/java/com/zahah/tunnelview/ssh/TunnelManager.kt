@@ -2,6 +2,8 @@ package com.zahah.tunnelview.ssh
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import androidx.annotation.StringRes
+import com.zahah.tunnelview.R
 import com.zahah.tunnelview.Prefs
 import com.zahah.tunnelview.Timing
 import com.zahah.tunnelview.data.ProxyEndpoint
@@ -181,7 +183,11 @@ class TunnelManager private constructor(context: Context) {
 
     fun forceReconnect(reason: String? = null) {
         if (!started) return
-        loggerScopeLog(ConnEvent.Level.INFO, ConnEvent.Phase.OTHER, "Force reconnect requested: ${reason ?: "-"}")
+        loggerScopeLog(
+            ConnEvent.Level.INFO,
+            ConnEvent.Phase.OTHER,
+            string(R.string.tunnel_force_reconnect_requested, reason ?: "-")
+        )
         scope.launch {
             closeCurrentTunnel()
             wakeChannel.trySend(Unit)
@@ -190,7 +196,7 @@ class TunnelManager private constructor(context: Context) {
 
     suspend fun testConnection(): Result<Unit> = withContext(Dispatchers.IO) {
         val endpoint = _snapshot.value.endpoint ?: return@withContext Result.failure(
-            IllegalStateException("Nenhum endpoint configurado no momento")
+            IllegalStateException(string(R.string.tunnel_no_endpoint_configured))
         )
         val params = try {
             buildTunnelParams(endpoint, attempt = 1)
@@ -217,7 +223,12 @@ class TunnelManager private constructor(context: Context) {
                 loggerScopeLog(
                     ConnEvent.Level.INFO,
                     ConnEvent.Phase.OTHER,
-                    "Endpoint updated via ${endpoint.source.name}: ${endpoint.host}:${endpoint.port}",
+                    string(
+                        R.string.tunnel_endpoint_updated,
+                        endpoint.source.name,
+                        endpoint.host,
+                        endpoint.port
+                    ),
                     endpoint = endpoint
                 )
                 scope.launch {
@@ -308,7 +319,9 @@ class TunnelManager private constructor(context: Context) {
                 handleFailure(
                     endpoint,
                     attempt,
-                    IllegalStateException("Forwarder was not able to bind local port ${params.localPort}")
+                    IllegalStateException(
+                        string(R.string.tunnel_forwarder_bind_failed, params.localPort)
+                    )
                 )
                 delayWithWake(backoffMillis)
                 backoffMillis = nextBackoff(backoffMillis)
@@ -345,7 +358,7 @@ class TunnelManager private constructor(context: Context) {
         loggerScopeLog(
             ConnEvent.Level.INFO,
             ConnEvent.Phase.FORWARD,
-            "Tunnel is active via ${endpoint.host}:${endpoint.port}",
+            string(R.string.tunnel_active_via, endpoint.host, endpoint.port),
             endpoint = endpoint
         )
         listenJob.cancel()
@@ -356,7 +369,7 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.WARN,
                         ConnEvent.Phase.FORWARD,
-                        "Tunnel closed unexpectedly",
+                        string(R.string.tunnel_closed_unexpectedly),
                         endpoint = endpoint
                     )
                 }
@@ -365,7 +378,7 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.INFO,
                         ConnEvent.Phase.FORWARD,
-                        "Tunnel listener cancelled",
+                        string(R.string.tunnel_listener_cancelled),
                         endpoint = endpoint
                     )
                 }
@@ -375,7 +388,10 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.ERROR,
                         ConnEvent.Phase.FORWARD,
-                        "Tunnel listener error: ${error.message}",
+                        string(
+                            R.string.tunnel_listener_error,
+                            error.message ?: string(R.string.tunnel_unknown_error)
+                        ),
                         endpoint = endpoint,
                         throwable = error
                     )
@@ -384,7 +400,7 @@ class TunnelManager private constructor(context: Context) {
                             endpoint = endpoint,
                             attempt = 1,
                             phase = ConnEvent.Phase.FORWARD,
-                            message = error.message ?: "Erro desconhecido",
+                            message = error.message ?: string(R.string.tunnel_unknown_error),
                             throwableClass = error::class.java.name,
                             occurredAtMillis = System.currentTimeMillis()
                         ),
@@ -393,7 +409,7 @@ class TunnelManager private constructor(context: Context) {
                             endpoint = endpoint,
                             attempt = 1,
                             phase = ConnEvent.Phase.FORWARD,
-                            message = error.message ?: "Erro desconhecido",
+                            message = error.message ?: string(R.string.tunnel_unknown_error),
                             throwableClass = error::class.java.name,
                             occurredAtMillis = System.currentTimeMillis()
                         )
@@ -458,7 +474,7 @@ class TunnelManager private constructor(context: Context) {
                 timestampMillis = occurredAt,
                 level = ConnEvent.Level.ERROR,
                 phase = phase,
-                message = "Attempt $attempt failed: $message",
+                message = string(R.string.tunnel_attempt_failed, attempt, message),
                 endpoint = endpoint,
                 attempt = attempt,
                 throwableClass = cause::class.java.name,
@@ -480,7 +496,10 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.INFO,
                         ConnEvent.Phase.OTHER,
-                        "Manual SSH override ativo; aguardando ${failureWindowMs / 1000}s de tentativas antes do fallback",
+                        string(
+                            R.string.tunnel_manual_override_waiting,
+                            TimeUnit.MILLISECONDS.toSeconds(failureWindowMs)
+                        ),
                         endpoint = endpoint
                     )
                 }
@@ -494,7 +513,7 @@ class TunnelManager private constructor(context: Context) {
                 loggerScopeLog(
                     ConnEvent.Level.INFO,
                     ConnEvent.Phase.OTHER,
-                    "Endpoint SSH fallback reaplicado após falhas prolongadas no override manual",
+                    string(R.string.tunnel_manual_override_fallback_extended),
                     endpoint = endpoint
                 )
             }
@@ -538,7 +557,10 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.WARN,
                         ConnEvent.Phase.OTHER,
-                        "Git endpoint refresh falhou: ${error.message ?: error::class.java.simpleName}",
+                        string(
+                            R.string.tunnel_git_refresh_failed,
+                            error.message ?: error::class.java.simpleName
+                        ),
                         endpoint = endpoint,
                         throwable = error
                     )
@@ -550,30 +572,38 @@ class TunnelManager private constructor(context: Context) {
                     loggerScopeLog(
                         ConnEvent.Level.INFO,
                         ConnEvent.Phase.OTHER,
-                        "Endpoint atualizado via git: ${result.endpoint.host}:${result.endpoint.port}",
+                        string(
+                            R.string.tunnel_git_endpoint_updated,
+                            result.endpoint.host,
+                            result.endpoint.port
+                        ),
                         endpoint = result.endpoint
                     )
                     proxyRepository.updateEndpoint(result.endpoint)
                 }
 
                 is RemoteEndpointResult.InvalidFormat -> {
-                    proxyRepository.reportError("Arquivo git inválido")
+                    proxyRepository.reportError(string(R.string.tunnel_git_file_invalid))
                 }
 
                 is RemoteEndpointResult.AuthError -> {
-                    proxyRepository.reportAuthFailure("Falha ao autenticar repositório git (${result.code})")
+                    proxyRepository.reportAuthFailure(
+                        string(R.string.tunnel_git_auth_failure, result.code)
+                    )
                 }
 
                 is RemoteEndpointResult.HttpError -> {
-                    proxyRepository.reportError("Erro HTTP ${result.code} ao buscar endpoint git")
+                    proxyRepository.reportError(
+                        string(R.string.tunnel_git_http_error, result.code)
+                    )
                 }
 
                 RemoteEndpointResult.Empty -> {
-                    proxyRepository.reportError("Arquivo git vazio")
+                    proxyRepository.reportError(string(R.string.tunnel_git_file_empty))
                 }
 
                 is RemoteEndpointResult.NetworkError -> {
-                    proxyRepository.reportError("Erro de rede ao buscar endpoint git")
+                    proxyRepository.reportError(string(R.string.tunnel_git_network_error))
                 }
 
                 null -> Unit
@@ -605,7 +635,7 @@ class TunnelManager private constructor(context: Context) {
             loggerScopeLog(
                 ConnEvent.Level.INFO,
                 ConnEvent.Phase.OTHER,
-                "Ignorando túnel SSH: conexão local ativa",
+                string(R.string.tunnel_direct_connection_active),
                 endpoint = endpoint
             )
         }
@@ -617,7 +647,7 @@ class TunnelManager private constructor(context: Context) {
             loggerScopeLog(
                 ConnEvent.Level.INFO,
                 ConnEvent.Phase.OTHER,
-                "Conexão local indisponível; retomando tentativas do túnel SSH",
+                string(R.string.tunnel_direct_connection_retrying),
                 endpoint = endpoint
             )
         }
@@ -670,7 +700,7 @@ class TunnelManager private constructor(context: Context) {
             loggerScopeLog(
                 ConnEvent.Level.WARN,
                 ConnEvent.Phase.FORWARD,
-                "Timeout aguardando encerramento do listener do túnel",
+                string(R.string.tunnel_listener_timeout),
                 endpoint = _snapshot.value.endpoint
             )
         }
@@ -702,7 +732,7 @@ class TunnelManager private constructor(context: Context) {
             loggerScopeLog(
                 ConnEvent.Level.INFO,
                 ConnEvent.Phase.OTHER,
-                "Endpoint SSH fallback reaplicado após override manual",
+                string(R.string.tunnel_manual_override_fallback),
                 endpoint = endpoint
             )
         }
@@ -730,20 +760,26 @@ class TunnelManager private constructor(context: Context) {
         val connectTimeoutMillis = prefs.sshConnectTimeoutMillis()
         val socketTimeoutMillis = prefs.sshSocketTimeoutMillis()
         val keepAliveSeconds = prefs.sshKeepAliveIntervalSeconds
-        val forceIpv4 = prefs.forceIpv4
+       val forceIpv4 = prefs.forceIpv4
         if (remoteHost.isBlank()) {
-            throw TunnelConfigurationException("Remote host não configurado")
+            throw TunnelConfigurationException(string(R.string.tunnel_error_remote_host_missing))
         }
         if (remotePort !in 1..65535) {
-            throw TunnelConfigurationException("Porta remota inválida: $remotePort")
+            throw TunnelConfigurationException(
+                string(R.string.tunnel_error_remote_port_invalid, remotePort)
+            )
         }
         val sshHost = sshHostCandidate?.trim().orEmpty()
         if (sshHost.isEmpty()) {
-            throw TunnelConfigurationException("Host SSH não configurado")
+            throw TunnelConfigurationException(string(R.string.tunnel_error_ssh_host_missing))
         }
-        val sshPort = sshPortCandidate ?: throw TunnelConfigurationException("Porta SSH não configurada")
+        val sshPort = sshPortCandidate ?: throw TunnelConfigurationException(
+            string(R.string.tunnel_error_ssh_port_missing)
+        )
         if (sshPort !in 1..65535) {
-            throw TunnelConfigurationException("Porta SSH inválida: $sshPortCandidate")
+            throw TunnelConfigurationException(
+                string(R.string.tunnel_error_ssh_port_invalid, sshPort)
+            )
         }
         return SshClient.TunnelParams(
             sshHost = sshHost,
@@ -789,6 +825,9 @@ class TunnelManager private constructor(context: Context) {
     }
 
     private fun isManualSshOverrideActive(): Boolean = prefs.lastManualSshConfigAt > 0L
+
+    private fun string(@StringRes resId: Int, vararg args: Any): String =
+        appContext.getString(resId, *args)
 
     class TunnelConfigurationException(message: String) : IllegalStateException(message)
 

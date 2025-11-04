@@ -92,6 +92,7 @@ import okhttp3.internal.closeQuietly
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlin.math.max
@@ -847,7 +848,12 @@ class MainCoordinator(
                         val orig = request.url
                         val url = toLocalLoopbackIfNeeded(orig).toString()
                         logConnection(android.util.Log.DEBUG, "WEBREQ") { "GET $orig -> $url" }
-                        interceptRequestWithClient(url, request, applyHttpHeaders = false)
+                        interceptRequestWithClient(
+                            url = url,
+                            request = request,
+                            applyHttpHeaders = false,
+                            isMainFrame = isMain
+                        )
                     }
                     LoadTarget.HTTP -> {
                         val url = request.url.toString()
@@ -858,7 +864,12 @@ class MainCoordinator(
                                 "HTTP GET $url"
                             }
                         }
-                        interceptRequestWithClient(url, request, applyHttpHeaders = true)
+                        interceptRequestWithClient(
+                            url = url,
+                            request = request,
+                            applyHttpHeaders = true,
+                            isMainFrame = isMain
+                        )
                     }
                     else -> null
                 }
@@ -869,18 +880,29 @@ class MainCoordinator(
     private fun interceptRequestWithClient(
         url: String,
         request: WebResourceRequest,
-        applyHttpHeaders: Boolean
+        applyHttpHeaders: Boolean,
+        isMainFrame: Boolean
     ): WebResourceResponse? {
+        val isRemoteHttp = applyHttpHeaders
+        val summarizedUrl = summarizeUrlForDiagnostics(url)
         return try {
             val appliedHeaders = if (applyHttpHeaders) {
                 httpRequestHeaders()
             } else {
                 null
             }
-            logHttpEvent(
-                ConnEvent.Level.DEBUG,
-                "HTTP asset request → $url (headers=${appliedHeaders?.keys?.joinToString() ?: "none"})"
-            )
+            if (isRemoteHttp) {
+                if (isMainFrame) {
+                    logHttpEvent(
+                        ConnEvent.Level.INFO,
+                        "HTTP navigation request → $summarizedUrl"
+                    )
+                } else if (prefs.connectionDebugLoggingEnabled) {
+                    logConnection(android.util.Log.DEBUG, "WEBREQ") {
+                        "HTTP asset request → $summarizedUrl"
+                    }
+                }
+            }
             val builder = Request.Builder()
                 .url(url)
                 .header("Accept", request.requestHeaders["Accept"] ?: "*/*")
@@ -900,11 +922,13 @@ class MainCoordinator(
 
             val response = http.newCall(builder.build()).execute()
             val body = response.body ?: run {
-                logHttpEvent(
-                    ConnEvent.Level.WARN,
-                    "HTTP asset request without body",
-                    code = response.code
-                )
+                if (isRemoteHttp) {
+                    logHttpEvent(
+                        ConnEvent.Level.WARN,
+                        "HTTP asset response without body ← $summarizedUrl",
+                        code = response.code
+                    )
+                }
                 response.closeQuietly()
                 return null
             }
@@ -924,8 +948,18 @@ class MainCoordinator(
             logConnection(android.util.Log.DEBUG, "WEBRESP") {
                 "↩ ${code} ${mime} ${if (sizeHint >= 0) "${sizeHint}B" else "stream"} [$respSource] <- $url"
             }
-            val eventLevel = if (code in 200..399) ConnEvent.Level.DEBUG else ConnEvent.Level.WARN
-            logHttpEvent(eventLevel, "HTTP asset response", code = code)
+            if (isRemoteHttp) {
+                val eventLevel = if (code in 200..399) ConnEvent.Level.INFO else ConnEvent.Level.WARN
+                val baseMessage = if (isMainFrame) {
+                    "HTTP navigation response ← $summarizedUrl"
+                } else {
+                    "HTTP asset response ← $summarizedUrl"
+                }
+                val shouldLogEvent = isMainFrame || eventLevel != ConnEvent.Level.INFO
+                if (shouldLogEvent) {
+                    logHttpEvent(eventLevel, baseMessage, code = code)
+                }
+            }
 
             val upstream = body.byteStream()
             val proxyStream = object : InputStream() {
@@ -947,7 +981,14 @@ class MainCoordinator(
                 responseHeaders = headers
             }
         } catch (t: Throwable) {
-            logHttpEvent(ConnEvent.Level.ERROR, "HTTP asset request failed", throwable = t)
+            if (isRemoteHttp) {
+                val message = if (isMainFrame) {
+                    "HTTP navigation failed → $summarizedUrl"
+                } else {
+                    "HTTP asset request failed → $summarizedUrl"
+                }
+                logHttpEvent(ConnEvent.Level.ERROR, message, throwable = t)
+            }
             android.util.Log.e("WEBREQ", "Erro interceptando $url", t)
             null
         }
@@ -969,6 +1010,32 @@ class MainCoordinator(
         502 -> "Bad Gateway"
         503 -> "Service Unavailable"
         else -> "OK"
+    }
+
+    private fun summarizeUrlForDiagnostics(raw: String): String {
+        return runCatching {
+            val uri = Uri.parse(raw)
+            val scheme = uri.scheme ?: return raw
+            val host = uri.host ?: return raw
+            val path = uri.path?.takeIf { it.isNotBlank() } ?: "/"
+            val defaultPort = defaultPortForScheme(scheme)
+            val port = uri.port
+            buildString {
+                append(scheme)
+                append("://")
+                append(host)
+                if (port != -1 && port != defaultPort) {
+                    append(":").append(port)
+                }
+                append(path)
+            }
+        }.getOrDefault(raw)
+    }
+
+    private fun defaultPortForScheme(scheme: String?): Int = when (scheme?.lowercase(Locale.US)) {
+        "http" -> 80
+        "https" -> 443
+        else -> -1
     }
 
     private fun registerStatusReceiver() {

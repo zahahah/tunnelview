@@ -9,8 +9,15 @@ internal object ManifestPatcher {
     private const val CHUNK_START_TAG = 0x0102
     private const val TYPE_STRING = 0x03
     private const val MANIFEST_HEADER_SIZE = 8
+    private const val TYPE_INT_DEC = 0x10
 
-    fun patch(manifestBytes: ByteArray, newPackage: String, newLabel: String): ByteArray {
+    fun patch(
+        manifestBytes: ByteArray,
+        newPackage: String,
+        newLabel: String,
+        versionName: String,
+        versionCode: Int
+    ): ByteArray {
         val (strings, flags, chunkSize) = parseStringPool(manifestBytes)
         val basePackage = findCurrentPackage(manifestBytes, strings)
         val updatedStrings = strings.map { current ->
@@ -32,10 +39,22 @@ internal object ManifestPatcher {
             updatedStrings.add(newPackage)
             packageIndex = updatedStrings.lastIndex
         }
+        var versionNameIndex = updatedStrings.indexOf(versionName)
+        if (versionNameIndex == -1) {
+            updatedStrings.add(versionName)
+            versionNameIndex = updatedStrings.lastIndex
+        }
 
         val newStringChunk = buildStringPoolChunk(updatedStrings, flags)
         val patched = rebuildManifest(manifestBytes, chunkSize, newStringChunk)
-        applyAttributePatches(patched, updatedStrings, packageIndex, labelIndex)
+        applyAttributePatches(
+            patched,
+            updatedStrings,
+            packageIndex,
+            labelIndex,
+            versionNameIndex,
+            versionCode
+        )
         return patched
     }
 
@@ -156,13 +175,17 @@ internal object ManifestPatcher {
         manifest: ByteArray,
         strings: List<String>,
         packageIndex: Int,
-        labelIndex: Int
+        labelIndex: Int,
+        versionNameIndex: Int,
+        versionCode: Int
     ) {
         val stringIndex = strings.withIndex().associate { it.value to it.index }
         val manifestNameIdx = stringIndex["manifest"] ?: error("'manifest' tag not found in string pool")
         val applicationNameIdx = stringIndex["application"] ?: error("'application' tag not found in string pool")
         val packageAttrIdx = stringIndex["package"] ?: error("'package' attr not found in string pool")
         val labelAttrIdx = stringIndex["label"] ?: error("'label' attr not found in string pool")
+        val versionCodeAttrIdx = stringIndex["versionCode"] ?: error("'versionCode' attr not found in string pool")
+        val versionNameAttrIdx = stringIndex["versionName"] ?: error("'versionName' attr not found in string pool")
 
         val buffer = ByteBuffer.wrap(manifest).order(ByteOrder.LITTLE_ENDIAN)
         var offset = MANIFEST_HEADER_SIZE
@@ -184,6 +207,18 @@ internal object ManifestPatcher {
                         buffer.put(attrOffset + 14, 0.toByte())
                         buffer.put(attrOffset + 15, TYPE_STRING.toByte())
                         buffer.putInt(attrOffset + 16, packageIndex)
+                    } else if (nameIdx == manifestNameIdx && attrNameIdx == versionNameAttrIdx) {
+                        buffer.putInt(attrOffset + 8, versionNameIndex)
+                        buffer.putShort(attrOffset + 12, 8)
+                        buffer.put(attrOffset + 14, 0.toByte())
+                        buffer.put(attrOffset + 15, TYPE_STRING.toByte())
+                        buffer.putInt(attrOffset + 16, versionNameIndex)
+                    } else if (nameIdx == manifestNameIdx && attrNameIdx == versionCodeAttrIdx) {
+                        buffer.putInt(attrOffset + 8, -1)
+                        buffer.putShort(attrOffset + 12, 8)
+                        buffer.put(attrOffset + 14, 0.toByte())
+                        buffer.put(attrOffset + 15, TYPE_INT_DEC.toByte())
+                        buffer.putInt(attrOffset + 16, versionCode)
                     } else if (nameIdx == applicationNameIdx && attrNameIdx == labelAttrIdx) {
                         buffer.putInt(attrOffset + 8, labelIndex)
                         buffer.putShort(attrOffset + 12, 8)

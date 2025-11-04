@@ -13,6 +13,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.zahah.tunnelview.Prefs
 import com.zahah.tunnelview.data.ProxyRepository
 import com.zahah.tunnelview.network.RemoteEndpointFetcher
 import com.zahah.tunnelview.network.GitEndpointFetcher
@@ -28,6 +29,7 @@ class EndpointSyncWorker(
 
     private val credentials = CredentialsStore.getInstance(appContext)
     private val repository = ProxyRepository.get(appContext)
+    private val prefs = Prefs(appContext)
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -52,6 +54,7 @@ class EndpointSyncWorker(
         return when (val result = fetcher.fetch(url, accessKey)) {
             is RemoteEndpointResult.Success -> {
                 repository.updateEndpoint(result.endpoint)
+                prefs.lastSuccessfulGitSyncAtMillis = System.currentTimeMillis()
                 Result.success()
             }
 
@@ -101,6 +104,7 @@ class EndpointSyncWorker(
         return when (val result = gitFetcher.fetch(params)) {
             is RemoteEndpointResult.Success -> {
                 repository.updateEndpoint(result.endpoint)
+                prefs.lastSuccessfulGitSyncAtMillis = System.currentTimeMillis()
                 Result.success()
             }
 
@@ -128,10 +132,21 @@ class EndpointSyncWorker(
                     }
                 }
                 Log.w(TAG, "Git clone failed", result.throwable)
-                repository.reportError(message)
+                if (shouldReportGitNetworkError(result.throwable)) {
+                    repository.reportError(message)
+                } else {
+                    Log.i(TAG, "Suprimindo erro de rede do git: ${result.throwable.message}")
+                }
                 Result.retry()
             }
         }
+    }
+
+    @Suppress("UNUSED_PARAMETER")
+    private fun shouldReportGitNetworkError(error: Throwable): Boolean {
+        if (!prefs.hasDirectEndpointConfigured()) return true
+        if (prefs.lastSuccessfulGitSyncAtMillis <= 0L) return true
+        return false
     }
 
     companion object {

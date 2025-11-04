@@ -77,11 +77,13 @@ class ConnectionDiagnosticsActivity : ComponentActivity() {
             val scope = rememberCoroutineScope()
             var themeColorId by remember { mutableStateOf(prefs.themeColorId) }
             var themeModeId by remember { mutableStateOf(prefs.themeModeId) }
+            var verboseLogsEnabled by remember { mutableStateOf(prefs.connectionDebugLoggingEnabled) }
             DisposableEffect(Unit) {
                 val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                     when (key) {
                         Prefs.KEY_THEME_COLOR -> themeColorId = prefs.themeColorId
                         Prefs.KEY_THEME_MODE -> themeModeId = prefs.themeModeId
+                        Prefs.KEY_CONNECTION_DEBUG_LOGGING -> verboseLogsEnabled = prefs.connectionDebugLoggingEnabled
                     }
                 }
                 sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -90,9 +92,12 @@ class ConnectionDiagnosticsActivity : ComponentActivity() {
 
             LaunchedEffect(themeModeId) { AppThemeManager.apply(themeModeId) }
             TunnelViewTheme(themeModeId = themeModeId, colorOptionId = themeColorId) {
+                val filteredEvents = remember(events, verboseLogsEnabled) {
+                    events.filter { shouldIncludeDiagnosticEvent(it, verboseLogsEnabled) }
+                }
                 ConnectionDiagnosticsScreen(
                     snapshot = snapshot,
-                    events = events,
+                    events = filteredEvents,
                     snackbarHostState = snackbarHostState,
                     isTesting = isTesting,
                     onTestConnection = {
@@ -305,6 +310,17 @@ private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
             text = stringResource(id = R.string.diagnostics_last_failure, lastFailure),
             style = MaterialTheme.typography.bodyMedium
         )
+    }
+}
+
+private fun shouldIncludeDiagnosticEvent(
+    event: ConnEvent,
+    verboseEnabled: Boolean
+): Boolean {
+    if (event.phase != ConnEvent.Phase.HTTP) return true
+    return when (event.level) {
+        ConnEvent.Level.ERROR, ConnEvent.Level.WARN -> true
+        ConnEvent.Level.INFO, ConnEvent.Level.DEBUG -> verboseEnabled
     }
 }
 
