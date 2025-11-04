@@ -32,6 +32,15 @@ def envFileContent = { key ->
     quoteString(file.getText("UTF-8"))
 }
 
+def disableAppBuilder = false
+if (project.hasProperty("disableAppBuilder")) {
+    def rawValue = project.property("disableAppBuilder")
+    def normalized = rawValue?.toString()?.trim()
+    disableAppBuilder = normalized == null || normalized.isEmpty() || normalized.equalsIgnoreCase("true")
+}
+def includeBaseTemplate = !disableAppBuilder
+def baseTemplateDirPath = "${buildDir}/generated/baseTemplate"
+
 android {
     namespace 'com.zahah.tunnelview'
     compileSdk 35
@@ -57,6 +66,16 @@ android {
         buildConfigField "String", "DEFAULT_SSH_PRIVATE_KEY", envFileContent("DEFAULT_SSH_PRIVATE_KEY_PATH")
         buildConfigField "String", "DEFAULT_GIT_PRIVATE_KEY", envFileContent("DEFAULT_GIT_PRIVATE_KEY_PATH")
         buildConfigField "String", "DEFAULT_SETTINGS_PASSWORD", quoteString(envValue("DEFAULT_SETTINGS_PASSWORD"))
+        buildConfigField "boolean", "APP_BUILDER_ENABLED", includeBaseTemplate ? "true" : "false"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(TUNNELVIEW_RELEASE_STORE_FILE)
+            storePassword TUNNELVIEW_RELEASE_STORE_PASSWORD
+            keyAlias TUNNELVIEW_RELEASE_KEY_ALIAS
+            keyPassword TUNNELVIEW_RELEASE_KEY_PASSWORD
+        }
     }
 
     buildTypes {
@@ -74,15 +93,6 @@ android {
             matchingFallbacks += ['debug']
             signingConfig signingConfigs.debug
             minifyEnabled false
-        }
-    }
-
-    signingConfigs {
-        release {
-            storeFile file(TUNNELVIEW_RELEASE_STORE_FILE)
-            storePassword TUNNELVIEW_RELEASE_STORE_PASSWORD
-            keyAlias TUNNELVIEW_RELEASE_KEY_ALIAS
-            keyPassword TUNNELVIEW_RELEASE_KEY_PASSWORD
         }
     }
 
@@ -116,56 +126,63 @@ android {
     }
 
     sourceSets {
-        debug {
-            assets.srcDir("${buildDir}/generated/baseTemplate")
+        main {
+            if (includeBaseTemplate) {
+                assets.srcDir(baseTemplateDirPath)
+            }
         }
     }
 }
 
-// Directory and file references used to keep the template APK tarball in sync.
-def baseTemplateOutputDir = file("${buildDir}/generated/baseTemplate")
-def baseTemplateTarFile = new File(baseTemplateOutputDir, "base_template_apk.tar")
-def templateVariantName = "template"
-def templateApk = file("build/outputs/apk/${templateVariantName}/app-${templateVariantName}.apk")
+if (includeBaseTemplate) {
+    // Directory and file references used to keep the template APK tarball in sync.
+    def baseTemplateOutputDir = file(baseTemplateDirPath)
+    def baseTemplateTarFile = new File(baseTemplateOutputDir, "base_template_apk.tar")
+    def templateVariantName = "template"
+    def templateApk = file("build/outputs/apk/${templateVariantName}/app-${templateVariantName}.apk")
 
-// Task responsible for copying the freshly built debug APK into the assets tarball.
-// This runs only when the APK is newer or the tarball is missing.
-tasks.register("packageBaseTemplateApk") {
-    group = "build setup"
-    description = "Packages the debug APK into base_template_apk.tar under assets."
+    // Task responsible for copying the freshly built debug APK into the assets tarball.
+    // This runs only when the APK is newer or the tarball is missing.
+    def packageBaseTemplateTask = tasks.register("packageBaseTemplateApk") {
+        group = "build setup"
+        description = "Packages the debug APK into base_template_apk.tar under assets."
 
-    dependsOn("assembleTemplate")
+        dependsOn("assembleTemplate")
 
-    outputs.file(baseTemplateTarFile)
+        outputs.file(baseTemplateTarFile)
 
-    outputs.upToDateWhen { false }
+        outputs.upToDateWhen { false }
 
-    doFirst {
-        if (baseTemplateTarFile.exists()) {
-            baseTemplateTarFile.delete()
+        doFirst {
+            if (baseTemplateTarFile.exists()) {
+                baseTemplateTarFile.delete()
+            }
+            baseTemplateOutputDir.mkdirs()
         }
-        baseTemplateOutputDir.mkdirs()
+
+        doLast {
+            if (!templateApk.exists()) {
+                throw new GradleException("Template APK ${templateApk.absolutePath} not found; did assembleTemplate succeed?")
+            }
+            def execOps = project.services.get(ExecOperations)
+            execOps.exec { ExecSpec execSpec ->
+                execSpec.workingDir(templateApk.parentFile)
+                execSpec.commandLine("tar", "-cf", baseTemplateTarFile.absolutePath, templateApk.name)
+            }
+            // Align modification time with APK to avoid triggering downstream rebuilds unnecessarily.
+            baseTemplateTarFile.setLastModified(templateApk.lastModified())
+        }
     }
 
-    doLast {
-        if (!templateApk.exists()) {
-            throw new GradleException("Template APK ${templateApk.absolutePath} not found; did assembleTemplate succeed?")
+    // Ensure we package the template APK after the debug assemble has produced the APK and before assets are merged.
+    afterEvaluate {
+        ["mergeDebugAssets", "mergeReleaseAssets"].each { taskName ->
+            tasks.findByName(taskName)?.dependsOn(packageBaseTemplateTask)
         }
-        def execOps = project.services.get(ExecOperations)
-        execOps.exec { ExecSpec execSpec ->
-            execSpec.workingDir(templateApk.parentFile)
-            execSpec.commandLine("tar", "-cf", baseTemplateTarFile.absolutePath, templateApk.name)
-        }
-        // Align modification time with APK to avoid triggering downstream rebuilds unnecessarily.
-        baseTemplateTarFile.setLastModified(templateApk.lastModified())
-    }
-}
 
-// Ensure we package the template APK after the debug assemble has produced the APK and before assets are merged.
-afterEvaluate {
-    def mergeDebugAssetsTask = tasks.findByName("mergeDebugAssets")
-    if (mergeDebugAssetsTask != null) {
-        mergeDebugAssetsTask.dependsOn("packageBaseTemplateApk")
+        ["lintVitalAnalyzeRelease", "generateReleaseLintVitalReportModel"].each { taskName ->
+            tasks.findByName(taskName)?.dependsOn(packageBaseTemplateTask)
+        }
     }
 }
 

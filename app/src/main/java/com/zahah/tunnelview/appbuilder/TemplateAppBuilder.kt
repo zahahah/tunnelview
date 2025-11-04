@@ -690,7 +690,7 @@ data class AppBuildRequest(
     val iconBytes: ByteArray? = null,
     val iconMimeType: String? = null,
     val customSigning: CustomSigningConfig? = null,
-    val includeBaseTemplate: Boolean = true
+    val includeBaseTemplate: Boolean = BuildConfig.APP_BUILDER_ENABLED
 )
 
 data class AppBuildResult(

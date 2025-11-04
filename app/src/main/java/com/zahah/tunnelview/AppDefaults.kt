@@ -95,7 +95,7 @@ object AppDefaultsProvider {
             sshPrivateKey = decodeMultiline(BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()),
             gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()),
             settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
-            appBuilderEnabled = true
+            appBuilderEnabled = BuildConfig.APP_BUILDER_ENABLED
         )
     }
 }
