@@ -61,7 +61,9 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
@@ -72,6 +74,15 @@ android {
             matchingFallbacks += ['debug']
             signingConfig signingConfigs.debug
             minifyEnabled false
+        }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(TUNNELVIEW_RELEASE_STORE_FILE)
+            storePassword TUNNELVIEW_RELEASE_STORE_PASSWORD
+            keyAlias TUNNELVIEW_RELEASE_KEY_ALIAS
+            keyPassword TUNNELVIEW_RELEASE_KEY_PASSWORD
         }
     }
 
