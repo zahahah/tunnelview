@@ -8,7 +8,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - **Dynamic endpoints** – The app listens to `ntfy.sh` topics over SSE/WebSockets (`NtfySseService`) and periodically syncs a fallback host:port from HTTP or private Git (`EndpointSyncWorker` + `GitEndpointFetcher`), so technicians can rotate tunnels remotely.
 - **Resilient browsing experience** – `MainCoordinator` toggles between direct connection, HTTP endpoints, and the tunnel, surfaces the active target in the toolbar/snackbar, probes HTTP paths every 10 s while on SSH so it can promote faster routes automatically, caches full HTML snapshots for offline mode, keeps uploads/downloads working, and exposes quick troubleshooting actions.
 - **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs.
-- **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings. Pass `-PdisableAppBuilder` to Gradle if you need to strip this feature (and the bundled `base_template_apk.tar`) from a given build.
+- **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings. Pass `-PdisableAppBuilder` to Gradle if you need to exclude this feature (and the bundled `base_template_apk.tar`) from a specific build.
 
 ## System Overview
 
@@ -144,12 +144,12 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
   ```bash
   ./gradlew assembleTemplate packageBaseTemplateApk
   ```
-- **Assemblies sem o App Builder embutido**
+- **Assemble without the embedded App Builder**
   ```bash
   ./gradlew assembleRelease -PdisableAppBuilder
   ./gradlew assembleDebug -PdisableAppBuilder
   ```
-  A propriedade `disableAppBuilder` remove o asset `base_template_apk.tar`, desativa a seção de builder no app e impede a tarefa `packageBaseTemplateApk` de executar. Basta omitir o parâmetro (ou usar `-PdisableAppBuilder=false`) para restaurar o comportamento padrão.
+  The `disableAppBuilder` property removes the `base_template_apk.tar` asset, hides the builder section inside the app, and prevents the `packageBaseTemplateApk` task from running. Omit the parameter (or pass `-PdisableAppBuilder=false`) to restore the default behavior.
 - **Unit tests** (includes `EndpointPayloadParserTest` and OkHttp/MockWebServer-powered tests)
   ```bash
   ./gradlew test
