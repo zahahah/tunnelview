@@ -137,6 +137,7 @@ class TunnelManager private constructor(context: Context) {
     private var started = true
     private var currentTunnel: SshClient.ActiveTunnel? = null
     private val suppressForwarderErrors = AtomicBoolean(false)
+    private val missingHostKeyFingerprintLogged = AtomicBoolean(false)
     private val lastLocalDirectSuccessAt = AtomicLong(0L)
     private val manualOverrideFallbackLoggedAt = AtomicLong(0L)
 
@@ -757,6 +758,21 @@ class TunnelManager private constructor(context: Context) {
         }
         val localPort = prefs.localPort
         val fingerprint = credentialsStore.sshFingerprintSha256()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        val strictHostKey = !isDebugBuild && fingerprint != null
+        if (!strictHostKey && !isDebugBuild) {
+            if (missingHostKeyFingerprintLogged.compareAndSet(false, true)) {
+                loggerScopeLog(
+                    ConnEvent.Level.WARN,
+                    ConnEvent.Phase.SSH_HANDSHAKE,
+                    string(R.string.tunnel_missing_release_fingerprint_warning),
+                    endpoint = endpoint
+                )
+            }
+        } else if (missingHostKeyFingerprintLogged.get()) {
+            missingHostKeyFingerprintLogged.set(false)
+        }
         val connectTimeoutMillis = prefs.sshConnectTimeoutMillis()
         val socketTimeoutMillis = prefs.sshSocketTimeoutMillis()
         val keepAliveSeconds = prefs.sshKeepAliveIntervalSeconds
@@ -796,7 +812,7 @@ class TunnelManager private constructor(context: Context) {
             password = prefs.sshPassword,
             privateKeyPem = prefs.sshPrivateKeyPem,
             forceIpv4 = forceIpv4,
-            strictHostKey = !isDebugBuild,
+            strictHostKey = strictHostKey,
             attempt = attempt,
         )
     }

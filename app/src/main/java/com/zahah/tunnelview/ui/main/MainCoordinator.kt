@@ -426,6 +426,19 @@ class MainCoordinator(
         val currentIndex = history.currentIndex
         val previousMeaningful = findPreviousMeaningfulHistoryIndex(history, currentIndex - 1)
         if (previousMeaningful >= 0) {
+            val previousUrl = runCatching { history.getItemAtIndex(previousMeaningful)?.url }
+                .getOrNull()
+                ?.takeUnless { it.isNullOrBlank() }
+            if (previousUrl != null) {
+                val currentBase = baseUrlFor(currentTarget)
+                val previousBase = baseFrom(previousUrl)
+                if (!urlsEquivalent(previousBase, currentBase)) {
+                    remapUrlToBase(previousUrl, currentBase)?.let { remapped ->
+                        loadUrlForTarget(remapped, currentTarget)
+                        return true
+                    }
+                }
+            }
             val steps = previousMeaningful - currentIndex
             if (steps != 0 && webView.canGoBackOrForward(steps)) {
                 webView.goBackOrForward(steps)
@@ -2451,6 +2464,21 @@ class MainCoordinator(
                 .toString()
         } catch (_: Throwable) {
             url
+        }
+    }
+
+    private fun remapUrlToBase(url: String, base: String): String? {
+        return try {
+            val original = Uri.parse(url)
+            val baseUri = Uri.parse(base)
+            baseUri.buildUpon()
+                .encodedPath(original.encodedPath ?: "/")
+                .encodedQuery(original.encodedQuery)
+                .fragment(original.fragment)
+                .build()
+                .toString()
+        } catch (_: Throwable) {
+            null
         }
     }
 
