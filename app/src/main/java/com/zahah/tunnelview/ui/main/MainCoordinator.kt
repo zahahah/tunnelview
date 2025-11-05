@@ -22,7 +22,7 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.ViewPropertyAnimator
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -69,7 +69,6 @@ import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
-import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -108,7 +107,7 @@ class MainCoordinator(
     private lateinit var webView: WebView
     private lateinit var progress: View
     private lateinit var toolbar: MaterialToolbar
-    private lateinit var appBar: AppBarLayout
+    private lateinit var appBar: ViewGroup
     private lateinit var rootView: View
     private lateinit var contentContainer: FrameLayout
     private lateinit var prefs: Prefs
@@ -126,8 +125,7 @@ class MainCoordinator(
     private var pendingSseStart: Boolean = false
     private var fallbackWatchersRunning: Boolean = false
     private var httpReconnectJob: Job? = null
-    private var toolbarVisible = true
-    private var appBarAnimator: ViewPropertyAnimator? = null
+    private var toolbarVisible = false
     private var showingCachedSnapshot = false
     private var keepContentVisibleDuringLoad = false
     private var tunnelAttempted = false
@@ -146,9 +144,10 @@ class MainCoordinator(
     private var lastDirectProbeAt = 0L
     private val doubleTapTimeout by lazy { ViewConfiguration.getDoubleTapTimeout().toLong() }
     private var statusBarInset = 0
-    private var systemBottomInset = 0
     private var contentBottomPadding = 0
     private var collapsedMargin = 0
+    private var contentInsetLeft = 0
+    private var contentInsetRight = 0
     private var toolbarPinnedByUser = false
     private val fallbackHandler = Handler(Looper.getMainLooper())
     private var directTimeoutRunnable: Runnable? = null
@@ -170,7 +169,6 @@ class MainCoordinator(
     private var lastSnapshotHash: Int = 0
     private val offlineCacheDir by lazy { File(filesDir, OFFLINE_CACHE_DIR) }
     private val offlineBridge = OfflineBridge()
-    private val bottomBarExtraPx by lazy { (8 * resources.displayMetrics.density).roundToInt() }
     private var loadingCachedHtml = false
     private var snapshotRetryTarget = LoadTarget.DIRECT
     private var offlineAssistEligibleAt: Long? = null
@@ -203,6 +201,13 @@ class MainCoordinator(
 
     private enum class LoadTarget { DIRECT, HTTP, TUNNEL }
     private enum class ToggleTarget { SHOW, HIDE }
+    private data class EdgeInsetsInfo(
+        val top: Int,
+        val left: Int,
+        val right: Int,
+        val navigationBottom: Int,
+        val imeBottom: Int
+    )
 
     private fun logConnection(level: Int, tag: String, lazyMessage: () -> String) {
         if (!::prefs.isInitialized || !prefs.connectionDebugLoggingEnabled) return
@@ -218,18 +223,11 @@ class MainCoordinator(
     private val rootTapListener = View.OnTouchListener { view, event ->
         if (event.actionMasked != MotionEvent.ACTION_DOWN) return@OnTouchListener false
         val now = SystemClock.elapsedRealtime()
-        val hideTap = toolbarVisible &&
-            (view === appBar || view === toolbar) &&
-            event.y <= appBar.height
-        val allowGlobalReveal = !toolbarVisible && shouldAllowGlobalRevealTap()
-        val revealTap = !toolbarVisible &&
-            !allowGlobalReveal &&
-            isRevealSurface(view) &&
-            isTapWithinToolbarRevealZone(event.rawY)
-        val showEligible = !toolbarVisible && (allowGlobalReveal || revealTap)
+        val hideTap = toolbarVisible && (view === appBar || view === toolbar)
+        val showTap = !toolbarVisible && shouldAllowGlobalRevealTap() && isRevealSurface(view)
         val target = when {
             hideTap -> ToggleTarget.HIDE
-            showEligible -> ToggleTarget.SHOW
+            showTap -> ToggleTarget.SHOW
             else -> null
         }
         if (target != null && handleToggleTap(target, now)) {
@@ -244,17 +242,11 @@ class MainCoordinator(
         progress.isVisible || tunnelErrorContainer.isVisible || showingCachedSnapshot
 
     private fun isRevealSurface(view: View): Boolean =
-        view === appBar || view === toolbar || view === rootView || view === contentContainer
-
-    private fun isTapWithinToolbarRevealZone(rawY: Float): Boolean {
-        if (toolbarVisible && rawY <= (statusBarInset + appBar.height)) return true
-        val defaultHeight = (56 * resources.displayMetrics.density).toInt()
-        val toolbarHeight = if (appBar.height > 0) appBar.height else defaultHeight
-        val revealThreshold = statusBarInset + toolbarHeight
-        if (revealThreshold <= 0) return false
-        return rawY <= revealThreshold
-    }
-
+        view === rootView ||
+            view === contentContainer ||
+            view === progress ||
+            view === tunnelErrorContainer ||
+            (view === webView && showingCachedSnapshot)
     private val http: OkHttpClient by lazy {
         val cacheDirectory = File(cacheDir, "webview-http-cache").apply { mkdirs() }
         val cacheSize = 50L * 1024L * 1024L
@@ -583,42 +575,23 @@ class MainCoordinator(
         webView.setOnTouchListener(rootTapListener)
 
         ViewCompat.setOnApplyWindowInsetsListener(rootView) { _, insets ->
-            val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            statusBarInset = status.top
-            collapsedMargin = when {
-                status.top <= 0 -> 0
-                else -> (status.top / 24).coerceAtLeast(1)
-            }
-            val navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            systemBottomInset = max(navBottom, imeBottom)
+            val edgeInsets = computeEdgeInsets(insets)
+            statusBarInset = edgeInsets.top
+            collapsedMargin = edgeInsets.top
             updateRootPadding()
             updateAppBarPadding()
             insets
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(contentContainer) { _, insets ->
-            val navBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
-            val imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            applyBottomSpacing(navBottom, imeBottom)
-            insets
-        }
-
-        ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-            val navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
-            applyBottomSpacing(navInsets.bottom, imeInsets.bottom)
-            val desiredBottom = contentBottomPadding
-            val desiredLeft = navInsets.left
-            val desiredRight = navInsets.right
-            if (v.paddingLeft != desiredLeft || v.paddingRight != desiredRight || v.paddingBottom != desiredBottom) {
-                v.setPadding(desiredLeft, v.paddingTop, desiredRight, desiredBottom)
-            }
+            val edgeInsets = computeEdgeInsets(insets)
+            applyBottomSpacing(edgeInsets)
             insets
         }
 
         ViewCompat.requestApplyInsets(appBar)
         ViewCompat.requestApplyInsets(webView)
+        ViewCompat.requestApplyInsets(contentContainer)
         ViewCompat.requestApplyInsets(rootView)
     }
 
@@ -2609,72 +2582,47 @@ class MainCoordinator(
 
     private fun hideToolbar() {
         if (toolbarPinnedByUser) return
-        if (!toolbarVisible && appBar.translationY < 0f) return
-        toolbarVisible = false
-        updateRootPadding()
-        updateAppBarPadding()
-        val height =
-            if (appBar.height > 0) appBar.height else (56 * resources.displayMetrics.density).toInt()
-        val target = -height.toFloat()
-        appBarAnimator?.cancel()
-        appBarAnimator = null
-        if (appBar.height == 0) {
-            appBar.post {
-                appBar.translationY = target
-                updateRootPadding()
-            }
-        } else {
-            appBarAnimator = appBar.animate()
-                .translationY(target)
-                .setDuration(180L)
-                .withEndAction {
-                    appBarAnimator = null
-                    updateRootPadding()
-                    updateAppBarPadding()
-                }
-        }
+        setToolbarVisibility(false, animate = true)
     }
 
     private fun showToolbar() {
-        if (toolbarVisible) return
-        toolbarVisible = true
-        updateRootPadding()
-        updateAppBarPadding()
-        appBarAnimator?.cancel()
-        appBarAnimator = null
-        appBarAnimator = appBar.animate()
-            .translationY(0f)
-            .setDuration(180L)
-            .withEndAction {
-                appBarAnimator = null
-                updateRootPadding()
-                updateAppBarPadding()
-            }
+        setToolbarVisibility(true, animate = true)
     }
 
     private fun showToolbarImmediate() {
-        val action = Runnable {
-            appBarAnimator?.cancel()
-            toolbarVisible = true
-            appBar.translationY = 0f
-            updateRootPadding()
-            updateAppBarPadding()
-        }
-        if (appBar.height == 0) appBar.post(action) else action.run()
+        setToolbarVisibility(true, animate = false)
     }
 
     private fun hideToolbarImmediate(force: Boolean = false) {
         if (!force && toolbarPinnedByUser) return
-        val action = Runnable {
-            appBarAnimator?.cancel()
-            toolbarVisible = false
-            val height =
-                if (appBar.height > 0) appBar.height else (56 * resources.displayMetrics.density).toInt()
-            appBar.translationY = -height.toFloat()
-            updateRootPadding()
-            updateAppBarPadding()
+        setToolbarVisibility(false, animate = false)
+    }
+
+    private fun setToolbarVisibility(visible: Boolean, animate: Boolean) {
+        if (toolbarVisible == visible) return
+        toolbarVisible = visible
+        appBar.animate().cancel()
+        if (visible) {
+            appBar.isVisible = true
+            if (animate) {
+                appBar.alpha = 0f
+                appBar.animate().alpha(1f).setDuration(180L).start()
+            } else {
+                appBar.alpha = 1f
+            }
+        } else {
+            if (animate) {
+                appBar.animate().alpha(0f).setDuration(120L).withEndAction {
+                    appBar.isVisible = false
+                    appBar.alpha = 1f
+                }.start()
+            } else {
+                appBar.isVisible = false
+                appBar.alpha = 1f
+            }
         }
-        if (appBar.height == 0) appBar.post(action) else action.run()
+        updateRootPadding()
+        updateAppBarPadding()
     }
 
     private fun handleToggleTap(target: ToggleTarget, now: Long): Boolean {
@@ -2698,43 +2646,72 @@ class MainCoordinator(
 
     private fun updateRootPadding() {
         val top = if (toolbarVisible) 0 else collapsedMargin
-        rootView.updatePadding(top = top, bottom = systemBottomInset)
+        rootView.updatePadding(top = top)
     }
 
-    private fun applyBottomSpacing(navInset: Int, imeInset: Int) {
-        val navigationInset = if (navInset > 0) navInset + bottomBarExtraPx else 0
+    private fun applyBottomSpacing(edgeInsets: EdgeInsetsInfo) {
+        val navigationInset = edgeInsets.navigationBottom
+        val imeInset = edgeInsets.imeBottom
         val effectiveBottom = max(navigationInset, imeInset)
-        if (contentBottomPadding == effectiveBottom &&
-            contentContainer.paddingBottom == navigationInset
-        ) return
+        val extraBottom = (effectiveBottom - navigationInset).coerceAtLeast(0)
+        val insetLeft = edgeInsets.left
+        val insetRight = edgeInsets.right
+        val containerNeedsUpdate =
+            contentContainer.paddingBottom != navigationInset ||
+                contentContainer.paddingLeft != insetLeft ||
+                contentContainer.paddingRight != insetRight
+        val webViewNeedsUpdate =
+            webView.paddingLeft != 0 ||
+                webView.paddingRight != 0 ||
+                webView.paddingBottom != extraBottom
+        if (!containerNeedsUpdate && !webViewNeedsUpdate && contentBottomPadding == effectiveBottom) {
+            return
+        }
+        contentInsetLeft = insetLeft
+        contentInsetRight = insetRight
         contentBottomPadding = effectiveBottom
-        contentContainer.setPadding(
-            contentContainer.paddingLeft,
-            contentContainer.paddingTop,
-            contentContainer.paddingRight,
-            navigationInset
-        )
-        webView.setPadding(
-            contentContainer.paddingLeft,
-            webView.paddingTop,
-            contentContainer.paddingRight,
-            effectiveBottom
-        )
+        contentContainer.setPadding(insetLeft, contentContainer.paddingTop, insetRight, navigationInset)
+        webView.setPadding(0, webView.paddingTop, 0, extraBottom)
         webView.updateLayoutParams<FrameLayout.LayoutParams> {
-            if (bottomMargin != navigationInset) bottomMargin = navigationInset
+            if (bottomMargin != extraBottom) bottomMargin = extraBottom
         }
         progress.updateLayoutParams<FrameLayout.LayoutParams> {
-            bottomMargin = effectiveBottom
+            bottomMargin = extraBottom
         }
         tunnelErrorContainer.updateLayoutParams<FrameLayout.LayoutParams> {
-            bottomMargin = effectiveBottom
+            bottomMargin = extraBottom
         }
+        updateAppBarPadding()
+    }
+
+    private fun computeEdgeInsets(insets: WindowInsetsCompat): EdgeInsetsInfo {
+        val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+        val navigationBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+        val systemGestures = insets.getInsets(WindowInsetsCompat.Type.systemGestures())
+        val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+        val topInset = max(statusBars.top, cutout.top)
+        val leftInset = max(max(statusBars.left, navigationBars.left), cutout.left)
+        val rightInset = max(max(statusBars.right, navigationBars.right), cutout.right)
+        val navInsetBottom = max(max(navigationBars.bottom, systemGestures.bottom), cutout.bottom)
+        return EdgeInsetsInfo(
+            top = topInset,
+            left = leftInset,
+            right = rightInset,
+            navigationBottom = navInsetBottom,
+            imeBottom = ime.bottom
+        )
     }
 
     private fun updateAppBarPadding() {
         val desiredTop = if (toolbarVisible) statusBarInset else 0
-        if (appBar.paddingTop != desiredTop) {
-            appBar.setPadding(appBar.paddingLeft, desiredTop, appBar.paddingRight, appBar.paddingBottom)
+        val desiredLeft = contentInsetLeft
+        val desiredRight = contentInsetRight
+        if (appBar.paddingTop != desiredTop ||
+            appBar.paddingLeft != desiredLeft ||
+            appBar.paddingRight != desiredRight
+        ) {
+            appBar.setPadding(desiredLeft, desiredTop, desiredRight, appBar.paddingBottom)
         }
     }
 

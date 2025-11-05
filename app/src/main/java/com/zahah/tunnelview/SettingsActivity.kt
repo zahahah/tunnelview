@@ -3,8 +3,6 @@ package com.zahah.tunnelview
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -65,11 +63,6 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         setTitle(R.string.settings_title)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            @Suppress("DEPRECATION")
-            window.statusBarColor = Color.TRANSPARENT
-        }
-
         setContent {
             var themeColorId by remember { mutableStateOf(prefs.themeColorId) }
             var themeModeId by remember { mutableStateOf(prefs.themeModeId) }
