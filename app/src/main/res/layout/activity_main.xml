@@ -127,6 +127,15 @@
             android:clickable="false"
             android:visibility="gone" />
 
+        <ImageView
+            android:id="@+id/webview_snapshot"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY"
+            android:visibility="gone"
+            android:contentDescription="@null" />
+
         <WebView
             android:id="@+id/webview"
             android:layout_width="match_parent"

@@ -24,6 +24,7 @@
     <string name="label_cache_last_page">Exibir versão anterior do website quando offline</string>
     <string name="label_persistent_notification">Mostrar notificação persistente do túnel</string>
     <string name="label_connection_debug">Habilitar logs detalhados de conexão</string>
+    <string name="label_hide_connection_messages">Ocultar mensagens</string>
     <string name="label_force_ipv4">Forçar IPv4 (ignorar IPv6)</string>
     <string name="settings_password_title">Proteger ajustes com senha</string>
     <string name="settings_password_description">Exigir uma senha antes de abrir esta tela.</string>

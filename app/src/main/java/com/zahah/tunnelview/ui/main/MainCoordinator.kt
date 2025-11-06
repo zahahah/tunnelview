@@ -10,6 +10,10 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -34,6 +38,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -164,6 +169,7 @@ class MainCoordinator(
     private val monitorIntervalMs = 5_000L
     private val httpProbeIntervalWhileOnTunnelMs = TimeUnit.SECONDS.toMillis(10)
     private val directProbeIntervalMs = TimeUnit.SECONDS.toMillis(10)
+    private val directRevealCooldownMs = 1_000L
     private var shouldSnapshotCurrentPage = false
     private var pendingSnapshot = false
     private var lastSnapshotUrl: String? = null
@@ -185,6 +191,15 @@ class MainCoordinator(
     private var isForeground = false
     private var keepWebViewVisibleDuringLoading = false
     private var pendingTunnelNavigation = false
+    private var mainFrameCommitVisible = false
+    private var mainFrameFinished = false
+    private var allowContentReveal = false
+    private var directRevealEarliestAt = 0L
+    private var directRevealRunnable: Runnable? = null
+    private var progressOriginalBackground: Drawable? = null
+    private val progressTransparentBackground = ColorDrawable(Color.TRANSPARENT)
+    private lateinit var snapshotView: ImageView
+    private var snapshotBitmap: Bitmap? = null
     private val currentTunnelState: TunnelManager.State
         get() = tunnelManager.state.value
     private val httpPreferenceKeys = setOf(
@@ -203,6 +218,17 @@ class MainCoordinator(
                 onHttpPreferencesChanged()
             }
         }
+
+    private fun connectionMessagesEnabled(): Boolean =
+        !(::prefs.isInitialized && prefs.hideConnectionMessages)
+
+    private fun isBlankMainUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        return url == "about:blank"
+    }
+
+    private fun isErrorUrl(url: String?): Boolean =
+        url?.startsWith("chrome-error://") == true
 
     private enum class LoadTarget { DIRECT, HTTP, TUNNEL }
     private enum class ToggleTarget { SHOW, HIDE }
@@ -305,7 +331,9 @@ class MainCoordinator(
                     showFriendlyError(activity.getString(R.string.waiting_dynamic_endpoint))
                 }
                 msg.startsWith("ERROR") -> {
-                    Toast.makeText(activity, msg, Toast.LENGTH_LONG).show()
+                    if (connectionMessagesEnabled()) {
+                        Toast.makeText(activity, msg, Toast.LENGTH_LONG).show()
+                    }
                     showFriendlyError(msg)
                     tunnelForceReconnectPending = true
                 }
@@ -405,6 +433,7 @@ class MainCoordinator(
         lastSnapshotUrl = null
         lastSnapshotHash = 0
         cancelDirectFallback()
+        hideSnapshotOverlay(clearBitmap = true)
         stopFallbackWatchers()
     }
 
@@ -464,6 +493,12 @@ class MainCoordinator(
         }
         keepContentVisibleDuringLoad = false
         showLoading()
+        if (currentTarget == LoadTarget.DIRECT) {
+            startDirectLoadingCooldown()
+        } else {
+            cancelDirectRevealDelay()
+            directRevealEarliestAt = 0L
+        }
         loadUrlForTarget(homeUrl, currentTarget)
         return true
     }
@@ -552,7 +587,9 @@ class MainCoordinator(
         rootView = activity.findViewById(R.id.root)
         contentContainer = activity.findViewById(R.id.content_container)
         webView = activity.findViewById(R.id.webview)
+        snapshotView = activity.findViewById(R.id.webview_snapshot)
         progress = activity.findViewById(R.id.progress)
+        progressOriginalBackground = progress.background
         tunnelErrorContainer = activity.findViewById(R.id.tunnel_error_container)
         tunnelErrorMessage = activity.findViewById(R.id.tunnel_error_message)
         tunnelRetryButton = activity.findViewById(R.id.tunnel_retry_button)
@@ -637,6 +674,7 @@ class MainCoordinator(
             toolbarPinnedByUser = false
             hideToolbarImmediate(force = true)
             progress.isVisible = true
+            setProgressOverlayTransparent(false)
             webView.isVisible = false
             if (prefs.cacheLastPage) {
                 showCachedPageIfAvailable()
@@ -717,11 +755,15 @@ class MainCoordinator(
                     view.loadUrl(mapped.toString())
                     return
                 }
+                mainFrameCommitVisible = false
+                mainFrameFinished = false
+                allowContentReveal = false
                 pendingSnapshot = true
                 shouldSnapshotCurrentPage = true
                 lastSnapshotUrl = null
                 lastSnapshotHash = 0
                 if (keepContentVisibleDuringLoad) {
+                    setProgressOverlayTransparent(true)
                     progress.isVisible = true
                 } else {
                     showLoading()
@@ -731,12 +773,27 @@ class MainCoordinator(
                 injectNetworkShim()
             }
 
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                logConnection(android.util.Log.DEBUG, "WEBNAV") { "Main commit visible: $url" }
+                super.onPageCommitVisible(view, url)
+                if (isBlankMainUrl(url) || isErrorUrl(url)) {
+                    return
+                }
+                mainFrameCommitVisible = true
+                maybeRevealContent()
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 logConnection(android.util.Log.DEBUG, "WEBNAV") { "Main finished: $url" }
                 super.onPageFinished(view, url)
-                keepContentVisibleDuringLoad = false
+                val blankUrl = isBlankMainUrl(url)
+                val errorUrl = isErrorUrl(url)
+                if (!blankUrl) {
+                    keepContentVisibleDuringLoad = false
+                    mainFrameFinished = true
+                }
                 val isSnapshotUrl = url.startsWith("file://") || url.startsWith("data:")
-                if (!url.startsWith("chrome-error://")) {
+                if (!errorUrl && !blankUrl) {
                     if (loadingCachedHtml) {
                         showingCachedSnapshot = true
                         loadingCachedHtml = false
@@ -746,28 +803,35 @@ class MainCoordinator(
                             extractRelativePath(url)?.let { prefs.cachedRelativePath = it }
                         }
                     }
-                    showContent()
+                    allowContentReveal = true
+                    maybeRevealContent()
                     tunnelAttempted = false
                     resetReconnectState()
                     hideFriendlyError()
-                } else {
+                } else if (errorUrl) {
+                    allowContentReveal = false
                     android.util.Log.w(
                         "WEBNAV",
                         "Main finished with error URL=$url; snapshot=$showingCachedSnapshot"
                     )
+                } else {
+                    allowContentReveal = false
                 }
                 cancelDirectFallback()
 
-                if (prefs.cacheLastPage &&
+                if (!blankUrl &&
+                    prefs.cacheLastPage &&
                     shouldSnapshotCurrentPage &&
                     !showingCachedSnapshot &&
                     !url.startsWith("chrome-error://")
                 ) {
                     snapshotPage()
                 }
-                shouldSnapshotCurrentPage = false
-                injectDiagnostics()
-                injectNetworkShim()
+                if (!blankUrl) {
+                    shouldSnapshotCurrentPage = false
+                    injectDiagnostics()
+                    injectNetworkShim()
+                }
             }
 
             override fun onReceivedError(
@@ -1088,13 +1152,15 @@ class MainCoordinator(
                     else -> R.string.ntfy_endpoint_applied
                 }
                 rootView.post {
-                    rootView.shortSnack(
-                        activity.getString(
-                            messageRes,
-                            endpoint.host,
-                            endpoint.port
+                    if (connectionMessagesEnabled()) {
+                        rootView.shortSnack(
+                            activity.getString(
+                                messageRes,
+                                endpoint.host,
+                                endpoint.port
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -1106,11 +1172,15 @@ class MainCoordinator(
             proxyRepository.statusFlow.collect { status ->
                 when (status) {
                     is ProxyStatus.Error -> rootView.post {
-                        rootView.shortSnack(status.message)
+                        if (connectionMessagesEnabled()) {
+                            rootView.shortSnack(status.message)
+                        }
                     }
 
                     is ProxyStatus.AuthFailure -> rootView.post {
-                        rootView.shortSnack(status.message)
+                        if (connectionMessagesEnabled()) {
+                            rootView.shortSnack(status.message)
+                        }
                     }
 
                     is ProxyStatus.EndpointApplied -> Unit
@@ -1932,6 +2002,12 @@ class MainCoordinator(
             loadTarget(fallbackTarget(LoadTarget.HTTP), force, keepWebVisible)
             return
         }
+        if (target == LoadTarget.DIRECT) {
+            startDirectLoadingCooldown()
+        } else {
+            cancelDirectRevealDelay()
+            directRevealEarliestAt = 0L
+        }
         currentTarget = target
         updateActiveConnectionIndicator(target)
         pendingTunnelNavigation = false
@@ -1948,13 +2024,25 @@ class MainCoordinator(
             keepWebVisible -> true
             else -> false
         }
+        var snapshotCaptured = false
         if (keepContentVisibleDuringLoad) {
-            progress.isVisible = !keepWebVisible
-            if (keepWebVisible && !webView.isVisible) {
+            snapshotCaptured = showSnapshotOverlay()
+            if (snapshotCaptured) {
+                webView.isVisible = false
+            } else {
+                hideSnapshotOverlay()
+            }
+        }
+        val effectiveKeepWebVisible = keepWebVisible && !snapshotCaptured
+        if (keepContentVisibleDuringLoad) {
+            setProgressOverlayTransparent(true)
+            progress.isVisible = !effectiveKeepWebVisible
+            progress.bringToFront()
+            if (effectiveKeepWebVisible && !webView.isVisible) {
                 webView.isVisible = true
             }
         } else {
-            showLoading(keepWebVisible = keepWebVisible)
+            showLoading(keepWebVisible = effectiveKeepWebVisible)
         }
         val preferSnapshotUrl = wasShowingSnapshot
         val desiredUrl = desiredUrlFor(target, preferSnapshotUrl)
@@ -2006,11 +2094,26 @@ class MainCoordinator(
             tunnelAttempted = true
             cancelDirectFallback()
         }
+        if (actualTarget == LoadTarget.DIRECT) {
+            startDirectLoadingCooldown()
+        } else {
+            cancelDirectRevealDelay()
+            directRevealEarliestAt = 0L
+        }
         val url = desiredUrlFor(actualTarget, preferSnapshot = false)
         logConnection(android.util.Log.DEBUG, "WEBNAV") {
             "recoverFromSnapshot -> loading $url (current=${webView.url})"
         }
         webView.post {
+            val snapshotCaptured = showSnapshotOverlay()
+            if (snapshotCaptured) {
+                webView.isVisible = false
+                setProgressOverlayTransparent(true)
+                progress.isVisible = true
+                progress.bringToFront()
+            } else {
+                hideSnapshotOverlay()
+            }
             keepContentVisibleDuringLoad = true
             updateOfflineLoadingVisibility()
             webView.stopLoading()
@@ -2165,6 +2268,7 @@ class MainCoordinator(
         normalizeBase("http://127.0.0.1:${prefs.localPort}/")
 
     private fun showCachedPage(html: String, baseUrl: String?) {
+        hideSnapshotOverlay()
         showingCachedSnapshot = true
         keepContentVisibleDuringLoad = false
         snapshotRetryTarget = preferredInitialTarget()
@@ -2220,6 +2324,7 @@ class MainCoordinator(
             prefs.cachedArchivePath = null
             return false
         }
+        hideSnapshotOverlay()
         showingCachedSnapshot = true
         keepContentVisibleDuringLoad = false
         snapshotRetryTarget = preferredInitialTarget()
@@ -2421,7 +2526,7 @@ class MainCoordinator(
         if (::toolbar.isInitialized) {
             toolbar.subtitle = message
         }
-        if (changed && !showingCachedSnapshot && ::rootView.isInitialized) {
+        if (changed && !showingCachedSnapshot && ::rootView.isInitialized && connectionMessagesEnabled()) {
             rootView.shortSnack(message)
         }
         logConnection(android.util.Log.INFO, "WEBCONN") {
@@ -2560,8 +2665,101 @@ class MainCoordinator(
         else -> "text/html"
     }
 
+    private fun setProgressOverlayTransparent(transparent: Boolean) {
+        if (!::progress.isInitialized) return
+        if (transparent) {
+            if (progress.background !== progressTransparentBackground) {
+                progress.background = progressTransparentBackground
+            }
+        } else {
+            val original = progressOriginalBackground
+            if (progress.background !== original) {
+                progress.background = original
+            }
+        }
+    }
+
+    private fun showSnapshotOverlay(): Boolean {
+        if (!::snapshotView.isInitialized || !::webView.isInitialized) return false
+        val width = webView.width
+        val height = webView.height
+        if (width <= 0 || height <= 0) return false
+        val currentBitmap = snapshotBitmap
+        val bitmap = if (currentBitmap != null &&
+            currentBitmap.width == width &&
+            currentBitmap.height == height
+        ) {
+            currentBitmap
+        } else {
+            snapshotView.setImageDrawable(null)
+            currentBitmap?.recycle()
+            runCatching { Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888) }
+                .getOrNull()
+                ?.also { snapshotBitmap = it }
+                ?: return false
+        }
+        return runCatching {
+            val canvas = Canvas(bitmap)
+            webView.draw(canvas)
+            snapshotView.setImageBitmap(bitmap)
+            snapshotView.isVisible = true
+            snapshotView.bringToFront()
+            true
+        }.getOrElse { false }
+    }
+
+    private fun hideSnapshotOverlay(clearBitmap: Boolean = false) {
+        if (::snapshotView.isInitialized) {
+            snapshotView.isVisible = false
+            if (clearBitmap) {
+                snapshotView.setImageDrawable(null)
+            }
+        }
+        if (clearBitmap) {
+            snapshotBitmap?.recycle()
+            snapshotBitmap = null
+        }
+    }
+
+    private fun cancelDirectRevealDelay() {
+        val runnable = directRevealRunnable ?: return
+        if (::progress.isInitialized) {
+            progress.removeCallbacks(runnable)
+        }
+        directRevealRunnable = null
+    }
+
+    private fun startDirectLoadingCooldown() {
+        cancelDirectRevealDelay()
+        directRevealEarliestAt = SystemClock.elapsedRealtime() + directRevealCooldownMs
+    }
+
+    private fun revealContentWithCooldown() {
+        if (currentTarget == LoadTarget.DIRECT) {
+            val remaining = directRevealEarliestAt - SystemClock.elapsedRealtime()
+            if (remaining > 0L) {
+                if (directRevealRunnable == null) {
+                    val runnable = Runnable {
+                        directRevealRunnable = null
+                        showContent()
+                    }
+                    directRevealRunnable = runnable
+                    if (::progress.isInitialized) {
+                        progress.postDelayed(runnable, remaining)
+                    } else {
+                        webView.postDelayed(runnable, remaining)
+                    }
+                }
+                return
+            }
+        }
+        showContent()
+    }
+
     private fun showLoading(keepWebVisible: Boolean = false) {
+        setProgressOverlayTransparent(keepWebVisible)
         progress.isVisible = true
+        progress.bringToFront()
         if (!keepWebVisible) {
             webView.isVisible = false
         } else if (!webView.isVisible) {
@@ -2575,6 +2773,9 @@ class MainCoordinator(
     }
 
     private fun showContent() {
+        cancelDirectRevealDelay()
+        hideSnapshotOverlay()
+        setProgressOverlayTransparent(false)
         progress.isVisible = false
         webView.isVisible = true
         if (toolbarPinnedByUser) {
@@ -2582,6 +2783,13 @@ class MainCoordinator(
         }
         updateOfflineLoadingVisibility()
         updateOfflineAssistVisibility()
+    }
+
+    private fun maybeRevealContent() {
+        if (!allowContentReveal) return
+        if (!mainFrameFinished || !mainFrameCommitVisible) return
+        allowContentReveal = false
+        revealContentWithCooldown()
     }
 
     private fun hideToolbar() {
@@ -2895,15 +3103,22 @@ class MainCoordinator(
             hideFriendlyError()
             return
         }
+        cancelDirectRevealDelay()
+        allowContentReveal = false
         val message = reason?.takeIf { it.isNotBlank() } ?: activity.getString(R.string.tunnel_error_generic)
         tunnelErrorMessage.text = message
         tunnelErrorContainer.isVisible = true
         tunnelErrorContainer.announceForAccessibility(message)
+        progress.isVisible = false
+        setProgressOverlayTransparent(false)
+        hideSnapshotOverlay()
+        updateOfflineLoadingVisibility()
         updateOfflineAssistVisibility()
     }
 
     private fun hideFriendlyError() {
         tunnelErrorContainer.isVisible = false
+        hideSnapshotOverlay()
         updateOfflineAssistVisibility()
     }
 

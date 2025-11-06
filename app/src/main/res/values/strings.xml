@@ -23,6 +23,7 @@
     <string name="label_cache_last_page">Show website previous version when offline</string>
     <string name="label_persistent_notification">Show persistent tunnel notification</string>
     <string name="label_connection_debug">Enable verbose connection logs</string>
+    <string name="label_hide_connection_messages">Hide connection messages</string>
     <string name="label_force_ipv4">Force IPv4 (ignore IPv6)</string>
     <string name="settings_password_title">Lock settings with a password</string>
     <string name="settings_password_description">Require a password before anyone can open this screen.</string>

@@ -152,6 +152,7 @@ fun SettingsScreen(
     var cacheLastPage by rememberSaveable { mutableStateOf(false) }
     var persistentNotification by rememberSaveable { mutableStateOf(false) }
     var connectionDebug by rememberSaveable { mutableStateOf(false) }
+    var hideConnectionMessages by rememberSaveable { mutableStateOf(prefs.hideConnectionMessages) }
     var forceIpv4 by rememberSaveable { mutableStateOf(false) }
     var autoSaveEnabled by rememberSaveable { mutableStateOf(prefs.autoSaveSettings) }
     var appLanguage by rememberSaveable { mutableStateOf(prefs.appLanguage) }
@@ -292,6 +293,7 @@ fun SettingsScreen(
         cacheLastPage = prefs.cacheLastPage
         persistentNotification = prefs.persistentNotificationEnabled
         connectionDebug = prefs.connectionDebugLoggingEnabled
+        hideConnectionMessages = prefs.hideConnectionMessages
         forceIpv4 = prefs.forceIpv4
         autoSaveEnabled = prefs.autoSaveSettings
         appLanguage = prefs.appLanguage
@@ -445,6 +447,7 @@ fun SettingsScreen(
 
                 prefs.persistentNotificationEnabled = persistentNotification
                 prefs.connectionDebugLoggingEnabled = connectionDebug
+                prefs.hideConnectionMessages = hideConnectionMessages
                 prefs.forceIpv4 = forceIpv4
                 prefs.autoSaveSettings = autoSaveEnabled
                 prefs.appLanguage = appLanguage
@@ -750,6 +753,7 @@ fun SettingsScreen(
                 cacheLastPage = cacheLastPage,
                 persistentNotification = persistentNotification,
                 connectionDebug = connectionDebug,
+                hideConnectionMessages = hideConnectionMessages,
                 forceIpv4 = forceIpv4,
                 autoSaveEnabled = autoSaveEnabled,
                 languageCode = appLanguage,
@@ -773,6 +777,10 @@ fun SettingsScreen(
                 },
                 onConnectionDebugChange = {
                     connectionDebug = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
+                onHideConnectionMessagesChange = {
+                    hideConnectionMessages = it
                     if (autoSaveEnabled) triggerSave(showMessage = false)
                 },
                 onForceIpv4Change = {
@@ -1541,6 +1549,7 @@ private fun PreferencesPage(
     cacheLastPage: Boolean,
     persistentNotification: Boolean,
     connectionDebug: Boolean,
+    hideConnectionMessages: Boolean,
     forceIpv4: Boolean,
     autoSaveEnabled: Boolean,
     languageCode: String,
@@ -1554,6 +1563,7 @@ private fun PreferencesPage(
     onCacheChange: (Boolean) -> Unit,
     onPersistentNotificationChange: (Boolean) -> Unit,
     onConnectionDebugChange: (Boolean) -> Unit,
+    onHideConnectionMessagesChange: (Boolean) -> Unit,
     onForceIpv4Change: (Boolean) -> Unit,
     onAutoSaveChange: (Boolean) -> Unit,
     onSettingsPasswordEnabledChange: (Boolean) -> Unit,
@@ -1648,6 +1658,11 @@ private fun PreferencesPage(
                     title = stringResource(id = R.string.label_connection_debug),
                     checked = connectionDebug,
                     onCheckedChange = onConnectionDebugChange
+                )
+                PreferenceSwitchRow(
+                    title = stringResource(id = R.string.label_hide_connection_messages),
+                    checked = hideConnectionMessages,
+                    onCheckedChange = onHideConnectionMessagesChange
                 )
                 PreferenceSwitchRow(
                     title = stringResource(id = R.string.label_force_ipv4),

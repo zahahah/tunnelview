@@ -358,6 +358,10 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean(KEY_CONNECTION_DEBUG_LOGGING, false)
         set(value) = sp.edit { putBoolean(KEY_CONNECTION_DEBUG_LOGGING, value) }
 
+    var hideConnectionMessages: Boolean
+        get() = sp.getBoolean(KEY_HIDE_CONNECTION_MESSAGES, false)
+        set(value) = sp.edit { putBoolean(KEY_HIDE_CONNECTION_MESSAGES, value) }
+
     var lastSuccessfulGitSyncAtMillis: Long
         get() = sp.getLong(KEY_LAST_GIT_SYNC_AT, 0L)
         set(value) = sp.edit { putLong(KEY_LAST_GIT_SYNC_AT, value) }
@@ -427,6 +431,7 @@ class Prefs(ctx: Context) {
         private const val KEY_HTTP_ADDRESS = "httpAddress"
         private const val KEY_DIRECT_ENABLED = "directConnectionEnabled"
         const val KEY_CONNECTION_DEBUG_LOGGING = "connectionDebugLoggingEnabled"
+        private const val KEY_HIDE_CONNECTION_MESSAGES = "hideConnectionMessages"
         private const val KEY_LAST_GIT_SYNC_AT = "gitFallbackLastSuccessAt"
         private const val DEFAULT_TIMEOUT_SECONDS = 20
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
