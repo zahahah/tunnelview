@@ -146,8 +146,8 @@ fun SettingsScreen(
     var directEnabled by rememberSaveable { mutableStateOf(prefs.directConnectionEnabled) }
     var httpEnabled by rememberSaveable { mutableStateOf(prefs.httpConnectionEnabled) }
     var httpAddress by rememberSaveable { mutableStateOf(prefs.httpAddress) }
-    var httpHeader by rememberSaveable { mutableStateOf(prefs.httpHeaderName) }
-    var httpKey by rememberSaveable { mutableStateOf(prefs.httpHeaderValue) }
+    var httpHeader by rememberSaveable { mutableStateOf("") }
+    var httpKey by rememberSaveable { mutableStateOf("") }
 
     var cacheLastPage by rememberSaveable { mutableStateOf(false) }
     var persistentNotification by rememberSaveable { mutableStateOf(false) }
@@ -249,6 +249,8 @@ fun SettingsScreen(
         topic = credentialsStore.ntfyTopic().orEmpty()
         remoteUrl = credentialsStore.remoteFileUrl().orEmpty()
         accessKey = credentialsStore.accessKey().orEmpty()
+        httpHeader = credentialsStore.httpHeaderName().orEmpty()
+        httpKey = credentialsStore.httpHeaderValue().orEmpty()
         val defaultGitRepo = appDefaults.gitRepoUrl
         val defaultGitFile = appDefaults.gitFilePath
         gitRepoUrl = credentialsStore.gitRepoUrl().orEmpty().ifBlank { defaultGitRepo }
@@ -270,8 +272,6 @@ fun SettingsScreen(
         remotePort = prefs.remotePort.takeIf { it > 0 }?.toString().orEmpty()
         httpEnabled = prefs.httpConnectionEnabled
         httpAddress = prefs.httpAddress
-        httpHeader = prefs.httpHeaderName
-        httpKey = prefs.httpHeaderValue
         directEnabled = prefs.directConnectionEnabled
         val fallbackDirectHost = appDefaults.directHost
         val fallbackDirectPort = appDefaults.directPort
@@ -352,6 +352,20 @@ fun SettingsScreen(
         }
         settingsPasswordError = null
 
+        if (httpEnabled) {
+            val normalizedAddress = httpAddress.trim()
+            if (normalizedAddress.isEmpty()) {
+                val error = context.getString(R.string.settings_http_address_required)
+                message = error
+                return
+            }
+            if (httpHeader.trim().isEmpty() || httpKey.trim().isEmpty()) {
+                val error = context.getString(R.string.settings_http_header_required)
+                message = error
+                return
+            }
+        }
+
         scope.launch {
             saving = true
             runCatching {
@@ -404,9 +418,13 @@ fun SettingsScreen(
                 val normalizedHttpHeader = httpHeader.trim()
                 val normalizedHttpKey = httpKey.trim()
                 prefs.httpAddress = normalizedHttpAddress
-                prefs.httpHeaderName = normalizedHttpHeader
-                prefs.httpHeaderValue = normalizedHttpKey
-                prefs.httpConnectionEnabled = httpEnabled && normalizedHttpAddress.isNotEmpty()
+                credentialsStore.setHttpHeaderName(normalizedHttpHeader.ifEmpty { null })
+                credentialsStore.setHttpHeaderValue(normalizedHttpKey.ifEmpty { null })
+                val httpReady = httpEnabled &&
+                    normalizedHttpAddress.isNotEmpty() &&
+                    normalizedHttpHeader.isNotEmpty() &&
+                    normalizedHttpKey.isNotEmpty()
+                prefs.httpConnectionEnabled = httpReady
                 val normalizedDirectHost = localLanHost.trim()
                 val normalizedDirectPort = localLanPort.trim()
                 prefs.localIpEndpoint = buildLocalEndpoint(normalizedDirectHost, normalizedDirectPort)

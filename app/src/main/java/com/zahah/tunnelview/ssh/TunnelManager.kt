@@ -16,6 +16,7 @@ import com.zahah.tunnelview.network.GitEndpointFetcher
 import com.zahah.tunnelview.network.RemoteEndpointResult
 import com.zahah.tunnelview.storage.CredentialsStore
 import com.zahah.tunnelview.work.EndpointSyncWorker
+import com.zahah.tunnelview.network.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +37,6 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -96,7 +96,8 @@ class TunnelManager private constructor(context: Context) {
     private val sshClient = SshClient(appContext, logger)
     private val connectivityObserver = ConnectivityObserver(appContext)
     private val gitHttpClient by lazy {
-        OkHttpClient.Builder()
+        HttpClient.shared(appContext)
+            .newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

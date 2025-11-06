@@ -105,28 +105,6 @@ class Prefs(ctx: Context) {
             }
         }
 
-    var httpHeaderName: String
-        get() = sp.getString(KEY_HTTP_HEADER, appDefaults.httpHeader)?.trim().orEmpty()
-        set(value) = sp.edit {
-            val normalized = value.trim()
-            if (normalized.isEmpty()) {
-                remove(KEY_HTTP_HEADER)
-            } else {
-                putString(KEY_HTTP_HEADER, normalized)
-            }
-        }
-
-    var httpHeaderValue: String
-        get() = sp.getString(KEY_HTTP_KEY, appDefaults.httpKey)?.trim().orEmpty()
-        set(value) = sp.edit {
-            val normalized = value.trim()
-            if (normalized.isEmpty()) {
-                remove(KEY_HTTP_KEY)
-            } else {
-                putString(KEY_HTTP_KEY, normalized)
-            }
-        }
-
     // SSH SERVER HOST/PORT (e.g., ngrok)
     var sshHost: String?
         get() = sp.getString("sshHost", null)
@@ -447,8 +425,6 @@ class Prefs(ctx: Context) {
         private const val KEY_SSH_KEEP_ALIVE = "sshKeepAliveIntervalSeconds"
         private const val KEY_HTTP_ENABLED = "httpConnectionEnabled"
         private const val KEY_HTTP_ADDRESS = "httpAddress"
-        private const val KEY_HTTP_HEADER = "httpHeaderName"
-        private const val KEY_HTTP_KEY = "httpHeaderValue"
         private const val KEY_DIRECT_ENABLED = "directConnectionEnabled"
         const val KEY_CONNECTION_DEBUG_LOGGING = "connectionDebugLoggingEnabled"
         private const val KEY_LAST_GIT_SYNC_AT = "gitFallbackLastSuccessAt"

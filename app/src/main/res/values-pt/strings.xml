@@ -119,8 +119,10 @@
     <string name="settings_section_http_description">Use esse endereço seguro quando a conexão direta não puder ser usada.</string>
     <string name="settings_http_enable_label">Habilitar conexão usando este endereço HTTP</string>
     <string name="settings_http_address_label">Endereço HTTP</string>
-    <string name="settings_http_header_label">Nome do cabeçalho (opcional)</string>
-    <string name="settings_http_key_label">Valor do cabeçalho (opcional)</string>
+    <string name="settings_http_header_label">Nome do cabeçalho</string>
+    <string name="settings_http_key_label">Valor do cabeçalho</string>
+    <string name="settings_http_address_required">Forneça um endereço HTTP para habilitar.</string>
+    <string name="settings_http_header_required">Informe nome e valor do cabeçalho para habilitar.</string>
     <string name="direct_access_button_label">Acessar por conexão direta</string>
     <string name="direct_access_info">A página será acessada sem túnel. Caso habilitado e os campos
         forem deixado em branco, o IP interno e porta serão implicitamente utilizados para conexão

@@ -16,13 +16,13 @@ import com.zahah.tunnelview.data.ProxyRepository
 import com.zahah.tunnelview.network.NtfyStatus
 import com.zahah.tunnelview.network.NtfySubscriber
 import com.zahah.tunnelview.storage.CredentialsStore
+import com.zahah.tunnelview.network.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 class NtfySseService : Service() {
@@ -39,8 +39,8 @@ class NtfySseService : Service() {
     }
 
     private val httpClient by lazy {
-        OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
+        HttpClient.shared(this)
+            .newBuilder()
             .readTimeout(0, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()

@@ -115,8 +115,10 @@
     <string name="settings_section_http_description">Use this secure address when the direct connection is not available.</string>
     <string name="settings_http_enable_label">Enable connection through this HTTP address</string>
     <string name="settings_http_address_label">HTTP address</string>
-    <string name="settings_http_header_label">Header name (optional)</string>
-    <string name="settings_http_key_label">Header value (optional)</string>
+    <string name="settings_http_header_label">Header name</string>
+    <string name="settings_http_key_label">Header value</string>
+    <string name="settings_http_address_required">HTTP mode requires a valid address.</string>
+    <string name="settings_http_header_required">HTTP mode requires both header name and value.</string>
     <string name="direct_access_button_label">Access via direct connection</string>
     <string name="direct_access_info">The page will be opened without the tunnel. If enabled and
         fields are empty, Internal IP and port will be implicitly used for direct connection.</string>

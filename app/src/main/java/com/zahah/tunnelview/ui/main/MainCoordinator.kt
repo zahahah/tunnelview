@@ -67,6 +67,7 @@ import com.zahah.tunnelview.ui.debug.ConnectionDiagnosticsActivity
 import com.zahah.tunnelview.logging.ConnEvent
 import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
+import com.zahah.tunnelview.network.HttpClient
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
 import com.google.android.material.appbar.MaterialToolbar
@@ -188,13 +189,17 @@ class MainCoordinator(
         get() = tunnelManager.state.value
     private val httpPreferenceKeys = setOf(
         "httpConnectionEnabled",
-        "httpAddress",
-        "httpHeaderName",
-        "httpHeaderValue"
+        "httpAddress"
     )
     private val prefsChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key != null && httpPreferenceKeys.contains(key)) {
+                onHttpPreferencesChanged()
+            }
+        }
+    private val credentialsChangeListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == CredentialsStore.KEY_HTTP_HEADER_NAME || key == CredentialsStore.KEY_HTTP_HEADER_VALUE) {
                 onHttpPreferencesChanged()
             }
         }
@@ -247,25 +252,25 @@ class MainCoordinator(
             view === progress ||
             view === tunnelErrorContainer ||
             (view === webView && showingCachedSnapshot)
+    private val sharedHttpClient: OkHttpClient by lazy {
+        HttpClient.shared(activity.applicationContext)
+    }
     private val http: OkHttpClient by lazy {
         val cacheDirectory = File(cacheDir, "webview-http-cache").apply { mkdirs() }
         val cacheSize = 50L * 1024L * 1024L
-        OkHttpClient.Builder()
+        sharedHttpClient.newBuilder()
             .connectTimeout(7, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
             .cache(Cache(cacheDirectory, cacheSize))
             .build()
     }
 
     private val healthCheckClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        sharedHttpClient.newBuilder()
+            .cache(null)
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)
             .callTimeout(7, TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
             .build()
     }
 
@@ -317,6 +322,7 @@ class MainCoordinator(
     fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(activity)
         prefs.registerListener(prefsChangeListener)
+        credentialsStore.registerChangeListener(credentialsChangeListener)
         bindViews()
         setupInsets()
         configureWebView()
@@ -342,7 +348,7 @@ class MainCoordinator(
         }
         val queuedAction = pendingTunnelAction
         pendingTunnelAction = null
-        val shouldRunFallbackWatchers = !prefs.httpConnectionEnabled || prefs.httpAddress.isBlank()
+        val shouldRunFallbackWatchers = !isHttpConfigured()
         if (shouldRunFallbackWatchers) {
             startFallbackWatchers(forceImmediate = true)
         } else {
@@ -383,6 +389,7 @@ class MainCoordinator(
         if (::prefs.isInitialized) {
             prefs.unregisterListener(prefsChangeListener)
         }
+        credentialsStore.unregisterChangeListener(credentialsChangeListener)
         unregisterNetworkObserver()
         tunnelStateJob?.cancel()
         filePathCallback?.onReceiveValue(null)
@@ -721,6 +728,7 @@ class MainCoordinator(
                 }
                 logConnection(android.util.Log.DEBUG, "WEBNAV") { "Main start: $url" }
                 super.onPageStarted(view, url, favicon)
+                injectNetworkShim()
             }
 
             override fun onPageFinished(view: WebView, url: String) {
@@ -759,6 +767,7 @@ class MainCoordinator(
                 }
                 shouldSnapshotCurrentPage = false
                 injectDiagnostics()
+                injectNetworkShim()
             }
 
             override fun onReceivedError(
@@ -821,7 +830,7 @@ class MainCoordinator(
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val isMain = request.isForMainFrame
-                val method = request.method.uppercase()
+                val method = request.method.uppercase(Locale.US)
                 if (method != "GET") return null
                 return when (currentTarget) {
                     LoadTarget.TUNNEL -> {
@@ -829,26 +838,25 @@ class MainCoordinator(
                             logConnection(android.util.Log.DEBUG, "WEBREQ") {
                                 "MAIN $method ${request.url}"
                             }
-                            return null
+                            null
+                        } else {
+                            val orig = request.url
+                            val url = toLocalLoopbackIfNeeded(orig).toString()
+                            logConnection(android.util.Log.DEBUG, "WEBREQ") { "$method $orig -> $url" }
+                            interceptRequestWithClient(
+                                url = url,
+                                request = request,
+                                applyHttpHeaders = false,
+                                isMainFrame = isMain
+                            )
                         }
-                        val orig = request.url
-                        val url = toLocalLoopbackIfNeeded(orig).toString()
-                        logConnection(android.util.Log.DEBUG, "WEBREQ") { "GET $orig -> $url" }
-                        interceptRequestWithClient(
-                            url = url,
-                            request = request,
-                            applyHttpHeaders = false,
-                            isMainFrame = isMain
-                        )
                     }
                     LoadTarget.HTTP -> {
                         val url = request.url.toString()
-                        logConnection(android.util.Log.DEBUG, "WEBREQ") {
-                            if (isMain) {
-                                "MAIN HTTP GET $url"
-                            } else {
-                                "HTTP GET $url"
-                            }
+                        if (isMain) {
+                            logConnection(android.util.Log.DEBUG, "WEBREQ") { "MAIN HTTP $method $url" }
+                        } else if (prefs.connectionDebugLoggingEnabled) {
+                            logConnection(android.util.Log.DEBUG, "WEBREQ") { "HTTP $method $url" }
                         }
                         interceptRequestWithClient(
                             url = url,
@@ -1834,9 +1842,7 @@ class MainCoordinator(
             c to (ua ?: "TunnelView/health")
         }
         val extraHeader = if (target == LoadTarget.HTTP) {
-            val name = prefs.httpHeaderName
-            val value = prefs.httpHeaderValue
-            if (name.isBlank() || value.isBlank()) null else name to value
+            credentialsStore.httpHeaderConfig()
         } else {
             null
         }
@@ -1844,7 +1850,7 @@ class MainCoordinator(
         return withContext(Dispatchers.IO) {
             try {
                 if (target == LoadTarget.HTTP && !silent) {
-                    val headerLabel = extraHeader?.first ?: "none"
+                    val headerLabel = extraHeader?.name ?: "none"
                     logHttpEvent(ConnEvent.Level.INFO, "HTTP health check → $base (header=$headerLabel)")
                 }
                 val request = Request.Builder()
@@ -1855,9 +1861,7 @@ class MainCoordinator(
                         if (!cookie.isNullOrEmpty()) {
                             header("Cookie", cookie)
                         }
-                        if (extraHeader != null) {
-                            header(extraHeader.first, extraHeader.second)
-                        }
+                        extraHeader?.let { header(it.name, it.value) }
                     }
                     .build()
                 val response = healthCheckClient.newCall(request).execute()
@@ -2060,8 +2064,10 @@ class MainCoordinator(
     private fun isDirectConfigured(): Boolean =
         prefs.hasDirectEndpointConfigured()
 
-    private fun isHttpConfigured(): Boolean =
-        prefs.httpConnectionEnabled && prefs.httpAddress.isNotBlank()
+    private fun isHttpConfigured(): Boolean {
+        if (!prefs.httpConnectionEnabled || prefs.httpAddress.isBlank()) return false
+        return credentialsStore.httpHeaderConfig() != null
+    }
 
     private fun directBaseUrl(): String {
         val manual = prefs.localIpEndpoint?.trim()?.takeIf { it.isNotEmpty() }
@@ -2076,10 +2082,8 @@ class MainCoordinator(
 
     private fun httpRequestHeaders(): Map<String, String>? {
         if (!isHttpConfigured()) return null
-        val name = prefs.httpHeaderName
-        val value = prefs.httpHeaderValue
-        if (name.isBlank() || value.isBlank()) return null
-        return mapOf(name to value)
+        val config = credentialsStore.httpHeaderConfig() ?: return null
+        return mapOf(config.name to config.value)
     }
 
     private fun loadUrlForTarget(url: String, target: LoadTarget) {
@@ -2715,6 +2719,90 @@ class MainCoordinator(
         }
     }
 
+    private fun injectNetworkShim() {
+        val header = credentialsStore.httpHeaderConfig() ?: return
+        val name = header.name.trim()
+        val value = header.value.trim()
+        if (name.isEmpty() || value.isEmpty()) return
+        val js = """
+            (function() {
+                const HEADER_NAME = ${jsStringLiteral(name)};
+                const HEADER_VALUE = ${jsStringLiteral(value)};
+                if (!HEADER_NAME || !HEADER_VALUE) { return; }
+                if (window.__tunnelviewHeaderShim === HEADER_NAME + HEADER_VALUE) { return; }
+                window.__tunnelviewHeaderShim = HEADER_NAME + HEADER_VALUE;
+                const mergeHeaders = (existing) => {
+                    const headers = new Headers(existing || {});
+                    headers.set(HEADER_NAME, HEADER_VALUE);
+                    return headers;
+                };
+                const withCredentials = (init) => Object.assign({ credentials: 'include' }, init || {});
+                if (typeof window.fetch === 'function') {
+                    const origFetch = window.fetch;
+                    window.fetch = function(input, init) {
+                        const nextInit = withCredentials(init);
+                        if (input instanceof Request) {
+                            nextInit.headers = mergeHeaders(nextInit.headers || input.headers);
+                            return origFetch.call(this, new Request(input, nextInit));
+                        }
+                        nextInit.headers = mergeHeaders(nextInit.headers);
+                        return origFetch.call(this, input, nextInit);
+                    };
+                }
+                if (window.XMLHttpRequest) {
+                    const proto = XMLHttpRequest.prototype;
+                    const origOpen = proto.open;
+                    proto.open = function() {
+                        return origOpen.apply(this, arguments);
+                    };
+                    const origSend = proto.send;
+                    proto.send = function(body) {
+                        try { this.setRequestHeader(HEADER_NAME, HEADER_VALUE); } catch (_) {}
+                        return origSend.apply(this, arguments);
+                    };
+                }
+                const submitViaFetch = async (form) => {
+                    if (!form || form.__tvSubmitting) return false;
+                    const method = (form.method || 'GET').toUpperCase();
+                    if (method === 'GET') return false;
+                    const action = form.action || window.location.href;
+                    form.__tvSubmitting = true;
+                    try {
+                        const response = await fetch(action, {
+                            method,
+                            body: new FormData(form),
+                            headers: mergeHeaders(),
+                            credentials: 'include'
+                        });
+                        const text = await response.text();
+                        document.open();
+                        document.write(text);
+                        document.close();
+                    } catch (_) {
+                    } finally {
+                        form.__tvSubmitting = false;
+                    }
+                    return true;
+                };
+                document.addEventListener('submit', function(event) {
+                    if (!event || !event.target) return;
+                    if (submitViaFetch(event.target)) {
+                        event.preventDefault();
+                    }
+                }, true);
+                if (window.HTMLFormElement) {
+                    const origSubmit = HTMLFormElement.prototype.submit;
+                    HTMLFormElement.prototype.submit = function() {
+                        if (!submitViaFetch(this)) {
+                            return origSubmit.apply(this, arguments);
+                        }
+                    };
+                }
+            })();
+        """.trimIndent()
+        webView.post { webView.evaluateJavascript(js, null) }
+    }
+
     private fun injectDiagnostics() {
         val diagJs = """
                 (function() {
@@ -2791,6 +2879,15 @@ class MainCoordinator(
                 })();
         """.trimIndent()
         webView.evaluateJavascript(diagJs, null)
+    }
+
+    private fun jsStringLiteral(value: String): String {
+        val escaped = value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+        return "\"$escaped\""
     }
 
     private fun showFriendlyError(reason: String?) {

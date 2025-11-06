@@ -48,6 +48,7 @@ import com.zahah.tunnelview.Prefs
 import com.zahah.tunnelview.logging.ConnEvent
 import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
+import com.zahah.tunnelview.storage.CredentialsStore
 import com.zahah.tunnelview.ui.theme.AppThemeManager
 import com.zahah.tunnelview.ui.theme.TunnelViewTheme
 import kotlinx.coroutines.launch
@@ -211,6 +212,7 @@ private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
     val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM) }
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
+    val credentialsStore = remember { CredentialsStore.getInstance(context) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val endpointText = snapshot.endpoint?.let {
             stringResource(
@@ -248,8 +250,10 @@ private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
             stringResource(id = R.string.diagnostics_no)
         }
         val httpAddress = prefs.httpAddress.ifBlank { stringResource(id = R.string.diagnostics_value_none) }
-        val httpHeaderName = prefs.httpHeaderName.ifBlank { stringResource(id = R.string.diagnostics_value_none) }
-        val httpKeyConfiguredText = if (prefs.httpHeaderValue.isNotBlank()) {
+        val headerConfig = credentialsStore.httpHeaderConfig()
+        val httpHeaderName = headerConfig?.name?.ifBlank { null }
+            ?: stringResource(id = R.string.diagnostics_value_none)
+        val httpKeyConfiguredText = if (headerConfig?.value?.isNotBlank() == true) {
             stringResource(id = R.string.diagnostics_yes)
         } else {
             stringResource(id = R.string.diagnostics_no)

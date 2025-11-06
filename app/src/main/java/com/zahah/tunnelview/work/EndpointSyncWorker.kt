@@ -19,8 +19,8 @@ import com.zahah.tunnelview.network.RemoteEndpointFetcher
 import com.zahah.tunnelview.network.GitEndpointFetcher
 import com.zahah.tunnelview.network.RemoteEndpointResult
 import com.zahah.tunnelview.storage.CredentialsStore
+import com.zahah.tunnelview.network.HttpClient
 import java.util.concurrent.TimeUnit
-import okhttp3.OkHttpClient
 
 class EndpointSyncWorker(
     appContext: Context,
@@ -31,7 +31,8 @@ class EndpointSyncWorker(
     private val repository = ProxyRepository.get(appContext)
     private val prefs = Prefs(appContext)
     private val client by lazy {
-        OkHttpClient.Builder()
+        HttpClient.shared(appContext)
+            .newBuilder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()
