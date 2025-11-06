@@ -134,6 +134,30 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 ### Acessing app config using the top bar
 - If you fast touch screen 2 times in any part of the screen while loading page, it will show the top bar for configuring the app. If the page loads faster than you to tap screen two times, you can touch 2 times in the tiny part of the top bar that appears below device notification bar (if you aren't successful, rotate screen to landscape and try again).
 
+## Configuration keys
+
+These `.env` entries (and matching `BuildConfig` fields) seed the defaults that ship inside the APK. Leaving a value blank keeps the corresponding field empty inside the app so users can enter it manually later.
+
+| Key | Description | When omitted |
+| --- | ----------- | ------------ |
+| `DEFAULT_SSH_PRIVATE_KEY_PATH` | Relative path to the SSH private key PEM bundled with the app and used for the primary tunnel connection. | No key is embedded; the Settings screen starts with an empty SSH key. |
+| `DEFAULT_GIT_PRIVATE_KEY_PATH` | Relative path to the PEM used when syncing fallbacks from a private Git repository. | Git sync defaults to an empty key; uploads must provide credentials manually. |
+| `DEFAULT_LOCAL_PORT` | Local TCP port where the SSH tunnel will listen (e.g., `8090`). | Falls back to `8090`. |
+| `DEFAULT_REMOTE_INTERNAL_HOST` | Hostname/IP inside the private network that the tunnel will forward traffic to. | Remains blank so the user must supply an internal host. |
+| `DEFAULT_REMOTE_INTERNAL_PORT` | Service port on the internal host that should be exposed. | Remains blank and must be filled in manually. |
+| `DEFAULT_DIRECT_HOST` | Optional direct-host override for bypassing the tunnel when reachable. | Blank; direct mode stays disabled until configured. |
+| `DEFAULT_DIRECT_PORT` | Port for the direct-host override. | Blank; direct mode stays disabled until configured. |
+| `DEFAULT_SSH_USER` | Username for the SSH connection. | Field is empty in Settings. |
+| `DEFAULT_SSH_FINGERPRINT` | SHA-256 fingerprint to pin the SSH host key when strict mode is enabled. (Currently used only as documentation for configuring Settings.) | Fingerprint pinning remains unset; the user can add it from Settings. |
+| `DEFAULT_GIT_REPO_URL` | Git remote (e.g., `git@…`) used for fallback endpoint JSON. | Git sync starts disabled. |
+| `DEFAULT_GIT_FILE_PATH` | Path inside the Git repo where the endpoint JSON lives. | Git sync starts disabled. |
+| `DEFAULT_HTTP_ADDRESS` | HTTP(S) endpoint returning fallback host/port data. | HTTP fallback stays disabled. |
+| `DEFAULT_HTTP_HEADER` | Optional header (for auth tokens, etc.) sent with HTTP fallback requests. | No extra headers are sent. |
+| `DEFAULT_HTTP_KEY` | Optional API key stored alongside the HTTP fallback configuration. | Key field remains blank. |
+| `DEFAULT_SETTINGS_PASSWORD` | Pre-fills the password required to open the Settings screen (if you enforce one). | Settings password prompt is empty by default. |
+
+Gradle also honors the property `-PdisableAppBuilder` (documented above) to remove the embedded App Builder flow entirely.
+
 ## Build & Test Workflows
 
 - **Assemble / install**
