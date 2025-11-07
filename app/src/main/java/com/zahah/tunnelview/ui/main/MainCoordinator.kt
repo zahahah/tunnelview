@@ -133,6 +133,7 @@ class MainCoordinator(
     private var httpReconnectJob: Job? = null
     private var toolbarVisible = false
     private var showingCachedSnapshot = false
+    private var offlineRecoveryInProgress = false
     private var keepContentVisibleDuringLoad = false
     private var tunnelAttempted = false
     private var directReconnectAttempted = false
@@ -169,7 +170,7 @@ class MainCoordinator(
     private val monitorIntervalMs = 5_000L
     private val httpProbeIntervalWhileOnTunnelMs = TimeUnit.SECONDS.toMillis(10)
     private val directProbeIntervalMs = TimeUnit.SECONDS.toMillis(10)
-    private val directRevealCooldownMs = 1_000L
+    private val directRevealCooldownMs = 1_500L
     private var shouldSnapshotCurrentPage = false
     private var pendingSnapshot = false
     private var lastSnapshotUrl: String? = null
@@ -194,6 +195,7 @@ class MainCoordinator(
     private var mainFrameCommitVisible = false
     private var mainFrameFinished = false
     private var allowContentReveal = false
+    private var directCooldownActive = false
     private var directRevealEarliestAt = 0L
     private var directRevealRunnable: Runnable? = null
     private var progressOriginalBackground: Drawable? = null
@@ -493,12 +495,7 @@ class MainCoordinator(
         }
         keepContentVisibleDuringLoad = false
         showLoading()
-        if (currentTarget == LoadTarget.DIRECT) {
-            startDirectLoadingCooldown()
-        } else {
-            cancelDirectRevealDelay()
-            directRevealEarliestAt = 0L
-        }
+        updateRevealCooldownFor(currentTarget)
         loadUrlForTarget(homeUrl, currentTarget)
         return true
     }
@@ -2002,12 +1999,7 @@ class MainCoordinator(
             loadTarget(fallbackTarget(LoadTarget.HTTP), force, keepWebVisible)
             return
         }
-        if (target == LoadTarget.DIRECT) {
-            startDirectLoadingCooldown()
-        } else {
-            cancelDirectRevealDelay()
-            directRevealEarliestAt = 0L
-        }
+        updateRevealCooldownFor(target)
         currentTarget = target
         updateActiveConnectionIndicator(target)
         pendingTunnelNavigation = false
@@ -2051,7 +2043,6 @@ class MainCoordinator(
             "Load target=$target force=$force url=$desiredUrl"
         }
         if (wasShowingSnapshot) {
-            showingCachedSnapshot = false
             recoverFromSnapshot(target)
             return
         }
@@ -2067,6 +2058,18 @@ class MainCoordinator(
     }
 
     private fun recoverFromSnapshot(target: LoadTarget = preferredInitialTarget()) {
+        if (offlineRecoveryInProgress) {
+            logConnection(android.util.Log.DEBUG, "WEBNAV") {
+                "recoverFromSnapshot -> already recovering; ignoring request for $target"
+            }
+            return
+        }
+        if (!showingCachedSnapshot) {
+            logConnection(android.util.Log.DEBUG, "WEBNAV") {
+                "recoverFromSnapshot -> no snapshot visible, skipping"
+            }
+            return
+        }
         val actualTarget = when (target) {
             LoadTarget.DIRECT -> if (isDirectConfigured()) {
                 LoadTarget.DIRECT
@@ -2081,7 +2084,6 @@ class MainCoordinator(
             LoadTarget.TUNNEL -> LoadTarget.TUNNEL
         }
         resetReconnectState()
-        showingCachedSnapshot = false
         pendingSnapshot = false
         snapshotRetryTarget = preferredInitialTarget()
         currentTarget = actualTarget
@@ -2094,38 +2096,47 @@ class MainCoordinator(
             tunnelAttempted = true
             cancelDirectFallback()
         }
-        if (actualTarget == LoadTarget.DIRECT) {
-            startDirectLoadingCooldown()
-        } else {
-            cancelDirectRevealDelay()
-            directRevealEarliestAt = 0L
-        }
+        updateRevealCooldownFor(actualTarget)
         val url = desiredUrlFor(actualTarget, preferSnapshot = false)
+        showingCachedSnapshot = false
+        offlineRecoveryInProgress = true
+        updateOfflineAssistVisibility()
+        updateOfflineLoadingVisibility()
         logConnection(android.util.Log.DEBUG, "WEBNAV") {
             "recoverFromSnapshot -> loading $url (current=${webView.url})"
         }
         webView.post {
             val snapshotCaptured = showSnapshotOverlay()
-            if (snapshotCaptured) {
-                webView.isVisible = false
-                setProgressOverlayTransparent(true)
-                progress.isVisible = true
-                progress.bringToFront()
-            } else {
+            if (!snapshotCaptured) {
+                logConnection(android.util.Log.WARN, "WEBNAV") {
+                    "recoverFromSnapshot -> snapshot capture failed; retrying"
+                }
+                offlineRecoveryInProgress = false
+                showingCachedSnapshot = true
                 hideSnapshotOverlay()
+                updateOfflineAssistVisibility()
+                updateOfflineLoadingVisibility()
+                fallbackHandler.postDelayed(
+                    { recoverFromSnapshot(actualTarget) },
+                    250L
+                )
+                return@post
             }
+            webView.isVisible = false
+            setProgressOverlayTransparent(true)
+            progress.isVisible = true
+            progress.bringToFront()
             keepContentVisibleDuringLoad = true
             updateOfflineLoadingVisibility()
             webView.stopLoading()
-                webView.loadUrl("about:blank")
-                webView.postDelayed({
-                    logConnection(android.util.Log.DEBUG, "WEBNAV") {
-                        "recoverFromSnapshot -> now loading $url"
-                    }
-                    loadUrlForTarget(url, actualTarget)
-                }, 50L)
+            webView.loadUrl("about:blank")
+            webView.postDelayed({
+                logConnection(android.util.Log.DEBUG, "WEBNAV") {
+                    "recoverFromSnapshot -> now loading $url"
+                }
+                loadUrlForTarget(url, actualTarget)
+            }, 50L)
         }
-        updateOfflineAssistVisibility()
     }
 
     private fun desiredUrlFor(target: LoadTarget, preferSnapshot: Boolean): String {
@@ -2270,6 +2281,7 @@ class MainCoordinator(
     private fun showCachedPage(html: String, baseUrl: String?) {
         hideSnapshotOverlay()
         showingCachedSnapshot = true
+        offlineRecoveryInProgress = false
         keepContentVisibleDuringLoad = false
         snapshotRetryTarget = preferredInitialTarget()
         hideFriendlyError()
@@ -2326,6 +2338,7 @@ class MainCoordinator(
         }
         hideSnapshotOverlay()
         showingCachedSnapshot = true
+        offlineRecoveryInProgress = false
         keepContentVisibleDuringLoad = false
         snapshotRetryTarget = preferredInitialTarget()
         showContent()
@@ -2734,13 +2747,55 @@ class MainCoordinator(
         directRevealEarliestAt = SystemClock.elapsedRealtime() + directRevealCooldownMs
     }
 
+    private fun resetDirectRevealCooldown() {
+        cancelDirectRevealDelay()
+        directRevealEarliestAt = 0L
+        setDirectCooldownActive(false)
+    }
+
+    private fun updateRevealCooldownFor(target: LoadTarget) {
+        if (target == LoadTarget.DIRECT) {
+            startDirectLoadingCooldown()
+        } else {
+            resetDirectRevealCooldown()
+        }
+    }
+
+    private fun setDirectCooldownActive(active: Boolean) {
+        if (directCooldownActive == active) return
+        directCooldownActive = active
+        updateOfflineLoadingVisibility()
+    }
+
+    private fun shouldShowOfflineCooldownOverlay(): Boolean {
+        if (showingCachedSnapshot || offlineRecoveryInProgress) return true
+        if (::snapshotView.isInitialized && snapshotView.isVisible) return true
+        return false
+    }
+
+    private fun ensureOfflineCooldownSpinnerVisible() {
+        if (!::progress.isInitialized) return
+        setProgressOverlayTransparent(true)
+        if (!progress.isVisible) {
+            progress.isVisible = true
+        }
+        progress.bringToFront()
+    }
+
     private fun revealContentWithCooldown() {
         if (currentTarget == LoadTarget.DIRECT) {
             val remaining = directRevealEarliestAt - SystemClock.elapsedRealtime()
             if (remaining > 0L) {
+                if (shouldShowOfflineCooldownOverlay()) {
+                    setDirectCooldownActive(true)
+                    ensureOfflineCooldownSpinnerVisible()
+                } else {
+                    setDirectCooldownActive(false)
+                }
                 if (directRevealRunnable == null) {
                     val runnable = Runnable {
                         directRevealRunnable = null
+                        setDirectCooldownActive(false)
                         showContent()
                     }
                     directRevealRunnable = runnable
@@ -2753,6 +2808,7 @@ class MainCoordinator(
                 return
             }
         }
+        setDirectCooldownActive(false)
         showContent()
     }
 
@@ -2774,6 +2830,8 @@ class MainCoordinator(
 
     private fun showContent() {
         cancelDirectRevealDelay()
+        setDirectCooldownActive(false)
+        offlineRecoveryInProgress = false
         hideSnapshotOverlay()
         setProgressOverlayTransparent(false)
         progress.isVisible = false
@@ -3103,12 +3161,23 @@ class MainCoordinator(
             hideFriendlyError()
             return
         }
+        val suppressed = shouldSuppressFriendlyError()
+        if (suppressed) {
+            logConnection(android.util.Log.DEBUG, "WEBNAV") {
+                "Suppressing tunnel error because another connection is active (reason=$reason)"
+            }
+        }
+        offlineRecoveryInProgress = false
         cancelDirectRevealDelay()
         allowContentReveal = false
         val message = reason?.takeIf { it.isNotBlank() } ?: activity.getString(R.string.tunnel_error_generic)
-        tunnelErrorMessage.text = message
-        tunnelErrorContainer.isVisible = true
-        tunnelErrorContainer.announceForAccessibility(message)
+        if (!suppressed) {
+            tunnelErrorMessage.text = message
+            tunnelErrorContainer.isVisible = true
+            tunnelErrorContainer.announceForAccessibility(message)
+        } else {
+            tunnelErrorContainer.isVisible = false
+        }
         progress.isVisible = false
         setProgressOverlayTransparent(false)
         hideSnapshotOverlay()
@@ -3122,6 +3191,18 @@ class MainCoordinator(
         updateOfflineAssistVisibility()
     }
 
+    private fun hasStablePrimaryContent(): Boolean {
+        if (showingCachedSnapshot) return true
+        if (!::webView.isInitialized) return false
+        if (!webView.isVisible) return false
+        return mainFrameFinished && mainFrameCommitVisible
+    }
+
+    private fun shouldSuppressFriendlyError(): Boolean {
+        if (currentTarget == LoadTarget.TUNNEL) return false
+        return hasStablePrimaryContent()
+    }
+
     private fun updateOfflineAssistVisibility() {
         if (::offlineInfoButton.isInitialized) {
             val webReady = ::webView.isInitialized && webView.isVisible
@@ -3132,9 +3213,20 @@ class MainCoordinator(
         }
     }
 
+    private fun isOfflineUiVisible(): Boolean {
+        val snapshotVisible = ::snapshotView.isInitialized && snapshotView.isVisible
+        return showingCachedSnapshot || offlineRecoveryInProgress || snapshotVisible || directCooldownActive
+    }
+
     private fun updateOfflineLoadingVisibility() {
         if (::offlineProgress.isInitialized) {
-            offlineProgress.isVisible = showingCachedSnapshot
+            val visible = isOfflineUiVisible()
+            val overlaySpinnerVisible = ::progress.isInitialized && progress.isVisible
+            val showOfflineSpinner = visible && !overlaySpinnerVisible
+            offlineProgress.isVisible = showOfflineSpinner
+            if (showOfflineSpinner) {
+                offlineProgress.bringToFront()
+            }
         }
     }
 
