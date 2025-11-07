@@ -1,5 +1,6 @@
 import org.gradle.process.ExecOperations
 import org.gradle.process.ExecSpec
+import java.util.Locale
 
 plugins {
     id 'com.android.application'
@@ -30,6 +31,11 @@ def envFileContent = { key ->
         return "\"\""
     }
     quoteString(file.getText("UTF-8"))
+}
+def envBoolean = { key ->
+    def normalized = envValue(key).toLowerCase(Locale.ROOT)
+    def truthy = ["1", "true", "yes", "y", "sim", "s", "on"]
+    truthy.contains(normalized) ? "true" : "false"
 }
 
 def disableAppBuilder = false
@@ -67,6 +73,7 @@ android {
         buildConfigField "String", "DEFAULT_GIT_PRIVATE_KEY", envFileContent("DEFAULT_GIT_PRIVATE_KEY_PATH")
         buildConfigField "String", "DEFAULT_SETTINGS_PASSWORD", quoteString(envValue("DEFAULT_SETTINGS_PASSWORD"))
         buildConfigField "boolean", "APP_BUILDER_ENABLED", includeBaseTemplate ? "true" : "false"
+        buildConfigField "boolean", "DEFAULT_HIDE_CONNECTION_MESSAGES", envBoolean("DEFAULT_HIDE_CONNECTION_MESSAGES")
     }
 
     signingConfigs {

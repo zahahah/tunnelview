@@ -7,7 +7,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - **Always-on SSH forwarding** – `TunnelService` + `TunnelManager` keep a local port open (default `8090`) and reconnect with smart backoff, IPv4 forcing, host-key pinning, and stateful notifications.
 - **Dynamic endpoints** – The app listens to `ntfy.sh` topics over SSE/WebSockets (`NtfySseService`) and periodically syncs a fallback host:port from HTTP or private Git (`EndpointSyncWorker` + `GitEndpointFetcher`), so technicians can rotate tunnels remotely.
 - **Resilient browsing experience** – `MainCoordinator` toggles between direct connection, HTTP endpoints, and the tunnel, surfaces the active target in the toolbar/snackbar, probes HTTP paths every 10 s while on SSH so it can promote faster routes automatically, caches full HTML snapshots for offline mode, keeps uploads/downloads working, and exposes quick troubleshooting actions.
-- **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs.
+- **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs, with defaults (e.g., “Hide connection messages”) now seedable via `.env` or `app_defaults.json`.
 - **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings. Pass `-PdisableAppBuilder` to Gradle if you need to exclude this feature (and the bundled `base_template_apk.tar`) from a specific build.
 
 ## System Overview
@@ -61,6 +61,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 | `DEFAULT_LOCAL_PORT`                                            | Local loopback port exposed on the device (default `8090`).                                                                |
 | `DEFAULT_SSH_USER`                                              | Default Linux user for the bastion.                                                                                        |
 | `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`                | Optional Git repo + file that holds the latest endpoint payload.                                                           |
+| `DEFAULT_HIDE_CONNECTION_MESSAGES`                              | `true`/`yes`/`1` keeps connection status snackbars/log toasts hidden by default until the user opts back in.               |
 
 3. **Provide PEM files (never commit production keys)**
 
@@ -68,7 +69,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
    - Keys are loaded at runtime via `AppDefaultsProvider` and can later be overridden inside Settings (stored securely in `EncryptedSharedPreferences` by `CredentialsStore`).
 
 4. **Optional: ship a pre-filled `app_defaults.json`**  
-   Place `app/src/main/assets/app_defaults.json` with the same fields as `AppDefaults` to override `.env` without rebuilding (useful when the App Builder generates a new APK).
+   Place `app/src/main/assets/app_defaults.json` with the same fields as `AppDefaults` to override `.env` without rebuilding (useful when the App Builder generates a new APK). Include `"hideConnectionMessages": true` if you want branded builds to suppress connection status messages from their very first launch.
 
 5. **Build & install**
    ```bash

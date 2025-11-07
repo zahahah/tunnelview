@@ -359,7 +359,7 @@ class Prefs(ctx: Context) {
         set(value) = sp.edit { putBoolean(KEY_CONNECTION_DEBUG_LOGGING, value) }
 
     var hideConnectionMessages: Boolean
-        get() = sp.getBoolean(KEY_HIDE_CONNECTION_MESSAGES, false)
+        get() = sp.getBoolean(KEY_HIDE_CONNECTION_MESSAGES, appDefaults.hideConnectionMessages)
         set(value) = sp.edit { putBoolean(KEY_HIDE_CONNECTION_MESSAGES, value) }
 
     var lastSuccessfulGitSyncAtMillis: Long

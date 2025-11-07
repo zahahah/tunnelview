@@ -22,7 +22,8 @@ data class AppDefaults(
     val sshPrivateKey: String,
     val gitPrivateKey: String,
     val settingsPassword: String,
-    val appBuilderEnabled: Boolean
+    val appBuilderEnabled: Boolean,
+    val hideConnectionMessages: Boolean
 )
 
 object AppDefaultsProvider {
@@ -68,7 +69,8 @@ object AppDefaultsProvider {
                         gitPrivateKey = json.optString("gitPrivateKey", base.gitPrivateKey).ifBlank { base.gitPrivateKey },
                         settingsPassword = json.optString("settingsPassword", base.settingsPassword)
                             .ifBlank { base.settingsPassword },
-                        appBuilderEnabled = json.optBoolean("appBuilderEnabled", base.appBuilderEnabled)
+                        appBuilderEnabled = json.optBoolean("appBuilderEnabled", base.appBuilderEnabled),
+                        hideConnectionMessages = json.optBoolean("hideConnectionMessages", base.hideConnectionMessages)
                     )
                 }
             }
@@ -95,7 +97,8 @@ object AppDefaultsProvider {
             sshPrivateKey = decodeMultiline(BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()),
             gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()),
             settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
-            appBuilderEnabled = BuildConfig.APP_BUILDER_ENABLED
+            appBuilderEnabled = BuildConfig.APP_BUILDER_ENABLED,
+            hideConnectionMessages = BuildConfig.DEFAULT_HIDE_CONNECTION_MESSAGES
         )
     }
 }
