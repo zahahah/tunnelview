@@ -235,10 +235,11 @@ class TunnelService : Service() {
     private fun ensureSseServiceStarted() {
         if (prefs.ntfyFetchUserOverride == false) return
         val topic = credentialsStore.ntfyTopic()?.trim().orEmpty()
-        if (topic.isEmpty()) return
+        val resolvedTopic = topic.takeIf { it.isNotBlank() } ?: prefs.ntfySseUrl
+        if (resolvedTopic.isBlank()) return
         val intent = Intent(applicationContext, NtfySseService::class.java).apply {
             action = Actions.START_SSE
-            putExtra(Keys.ENDPOINT, topic)
+            putExtra(Keys.ENDPOINT, resolvedTopic)
         }
         try {
             ContextCompat.startForegroundService(applicationContext, intent)

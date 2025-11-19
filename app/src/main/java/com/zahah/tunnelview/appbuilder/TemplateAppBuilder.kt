@@ -234,6 +234,7 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackHttpAddress = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty()
         val fallbackHttpHeader = BuildConfig.DEFAULT_HTTP_HEADER.orEmpty()
         val fallbackHttpKey = BuildConfig.DEFAULT_HTTP_KEY.orEmpty()
+        val fallbackNtfyTopic = BuildConfig.DEFAULT_NTFY.orEmpty()
         val fallbackGitRepo = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty()
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
         val fallbackSshKey = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()
@@ -249,6 +250,7 @@ class TemplateAppBuilder(private val context: Context) {
         val httpAddress = request.defaultHttpAddress
         val httpHeader = request.defaultHttpHeader
         val httpKey = request.defaultHttpKey
+        val ntfyTopic = request.defaultNtfyTopic
         val sshUser = request.defaultSshUser
         val gitRepo = request.defaultGitRepoUrl
         val gitFile = request.defaultGitFilePath
@@ -256,6 +258,7 @@ class TemplateAppBuilder(private val context: Context) {
         val gitKey = request.defaultGitPrivateKey
         val settingsPassword = request.defaultSettingsPassword
         val builderEnabled = request.includeBaseTemplate
+        val enforceNtfyOverride = ntfyTopic.isNotBlank()
         if (
             host == fallbackHost &&
             port == fallbackPort &&
@@ -264,6 +267,7 @@ class TemplateAppBuilder(private val context: Context) {
             httpAddress == fallbackHttpAddress &&
             httpHeader == fallbackHttpHeader &&
             httpKey == fallbackHttpKey &&
+            ntfyTopic == fallbackNtfyTopic &&
             sshUser == fallbackSshUser &&
             gitRepo == fallbackGitRepo &&
             gitFile == fallbackGitFile &&
@@ -271,7 +275,8 @@ class TemplateAppBuilder(private val context: Context) {
             gitKey == fallbackGitKey &&
             localPort == fallbackLocalPort &&
             settingsPassword == fallbackSettingsPassword &&
-            builderEnabled == fallbackBuilderEnabled
+            builderEnabled == fallbackBuilderEnabled &&
+            !enforceNtfyOverride
         ) {
             return null
         }
@@ -287,6 +292,7 @@ class TemplateAppBuilder(private val context: Context) {
             put("httpAddress", httpAddress)
             put("httpHeader", httpHeader)
             put("httpKey", httpKey)
+            put("ntfyTopic", ntfyTopic)
             put("httpEnabled", httpAddress.isNotBlank())
             put("sshUser", sshUser)
             put("gitRepoUrl", gitRepo)
@@ -681,6 +687,7 @@ data class AppBuildRequest(
     val defaultHttpAddress: String = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty(),
     val defaultHttpHeader: String = BuildConfig.DEFAULT_HTTP_HEADER.orEmpty(),
     val defaultHttpKey: String = BuildConfig.DEFAULT_HTTP_KEY.orEmpty(),
+    val defaultNtfyTopic: String = BuildConfig.DEFAULT_NTFY.orEmpty(),
     val defaultSshUser: String = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
     val defaultGitRepoUrl: String = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
     val defaultGitFilePath: String = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),

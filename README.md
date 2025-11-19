@@ -58,6 +58,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 | `DEFAULT_DIRECT_HOST` / `DEFAULT_DIRECT_PORT`                   | Direct connection host/port used for the no-tunnel health check and prefilled in Settings.                                 |
 | `DEFAULT_HTTP_ADDRESS`                                          | Optional HTTP URL used for “HTTP mode” (e.g. ngrok/Cloudflare tunnel endpoint).                                            |
 | `DEFAULT_HTTP_HEADER` / `DEFAULT_HTTP_KEY`                      | Header name/value automatically attached to HTTP requests (useful for auth tokens).                                        |
+| `DEFAULT_NTFY`                                                  | ntfy topic code (e.g. `s10e-server-ngrok`) pre-filled under Settings → Remote Updates; the app derives the SSE/WebSocket URL automatically. |
 | `DEFAULT_LOCAL_PORT`                                            | Local loopback port exposed on the device (default `8090`).                                                                |
 | `DEFAULT_SSH_USER`                                              | Default Linux user for the bastion.                                                                                        |
 | `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`                | Optional Git repo + file that holds the latest endpoint payload.                                                           |
@@ -155,6 +156,7 @@ These `.env` entries (and matching `BuildConfig` fields) seed the defaults that 
 | `DEFAULT_HTTP_ADDRESS` | HTTP(S) endpoint returning fallback host/port data. | HTTP fallback stays disabled. |
 | `DEFAULT_HTTP_HEADER` | Optional header (for auth tokens, etc.) sent with HTTP fallback requests. | No extra headers are sent. |
 | `DEFAULT_HTTP_KEY` | Optional API key stored alongside the HTTP fallback configuration. | Key field remains blank. |
+| `DEFAULT_NTFY` | ntfy topic code shown in the Remote Updates screen (the SSE/WebSocket URLs are derived automatically). | ntfy topic stays empty, so automated updates remain off until configured manually. |
 | `DEFAULT_SETTINGS_PASSWORD` | Pre-fills the password required to open the Settings screen (if you enforce one). | Settings password prompt is empty by default. |
 
 Gradle also honors the property `-PdisableAppBuilder` (documented above) to remove the embedded App Builder flow entirely.

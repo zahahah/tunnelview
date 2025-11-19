@@ -1357,14 +1357,15 @@ class MainCoordinator(
             return
         }
         val topic = credentialsStore.ntfyTopic()?.trim().orEmpty()
-        if (topic.isEmpty()) {
+        val resolvedTopic = topic.takeIf { it.isNotBlank() } ?: prefs.ntfySseUrl
+        if (resolvedTopic.isEmpty()) {
             stopNtfyUpdates()
             return
         }
         val appContext = activity.applicationContext
         val intent = Intent(appContext, NtfySseService::class.java).apply {
             action = Actions.START_SSE
-            putExtra(Keys.ENDPOINT, topic)
+            putExtra(Keys.ENDPOINT, resolvedTopic)
         }
         try {
             ContextCompat.startForegroundService(appContext, intent)

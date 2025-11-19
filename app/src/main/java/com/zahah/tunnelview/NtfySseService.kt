@@ -121,12 +121,13 @@ class NtfySseService : Service() {
     private suspend fun startSubscriber(topicOverride: String?) {
         val topic = topicOverride?.takeIf { it.isNotBlank() }
             ?: credentialsStore.ntfyTopic()?.trim()
-        if (topic.isNullOrEmpty()) {
+        val resolvedTopic = topic?.takeIf { it.isNotBlank() } ?: prefs.ntfySseUrl
+        if (resolvedTopic.isNullOrEmpty()) {
             stopSubscriber()
             updateNotification(getString(R.string.ntfy_status_missing_topic))
             return
         }
-        subscriber.start(topic)
+        subscriber.start(resolvedTopic)
     }
 
     private fun stopSubscriber() {

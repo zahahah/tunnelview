@@ -54,7 +54,7 @@ class CredentialsStore private constructor(context: Context) {
         write(KEY_HTTP_HEADER_VALUE, value)
     }
 
-    fun ntfyTopic(): String? = read(KEY_TOPIC, LEGACY_NTFY_URL)
+    fun ntfyTopic(): String? = read(KEY_TOPIC, LEGACY_NTFY_URL, appDefaults.ntfyTopic)
 
     fun remoteFileUrl(): String? = read(KEY_REMOTE_FILE_URL, LEGACY_FALLBACK_URL)
 

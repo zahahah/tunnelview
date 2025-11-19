@@ -193,6 +193,8 @@
     <string name="app_builder_default_http_header_placeholder">ex.: X-App-Key</string>
     <string name="app_builder_default_http_key_label">Valor do cabeçalho HTTP padrão</string>
     <string name="app_builder_default_http_key_placeholder">Valor enviado no cabeçalho (opcional)</string>
+    <string name="app_builder_default_ntfy_label">Tópico ntfy padrão</string>
+    <string name="app_builder_default_ntfy_placeholder">s10e-server-ngrok</string>
     <string name="menu_settings">Configurações</string>
     <string name="menu_open_ntfy">Abrir ntfy.sh</string>
     <string name="menu_diagnostics">Diagnóstico</string>

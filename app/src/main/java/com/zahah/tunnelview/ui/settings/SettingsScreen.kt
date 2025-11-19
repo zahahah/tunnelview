@@ -168,6 +168,10 @@ fun SettingsScreen(
 
     val builderEnabled = remember { appDefaults.appBuilderEnabled }
     val appBuilder = remember { TemplateAppBuilder(context) }
+    val defaultNtfySeed = remember {
+        val envDefault = BuildConfig.DEFAULT_NTFY.orEmpty()
+        appDefaults.ntfyTopic.ifBlank { envDefault }
+    }
     var builderAppName by rememberSaveable { mutableStateOf("") }
     var builderPackage by rememberSaveable { mutableStateOf("") }
     var builderVersionName by rememberSaveable { mutableStateOf(BuildConfig.VERSION_NAME) }
@@ -180,6 +184,7 @@ fun SettingsScreen(
     var builderDefaultHttpAddress by rememberSaveable { mutableStateOf(appDefaults.httpAddress) }
     var builderDefaultHttpHeader by rememberSaveable { mutableStateOf(appDefaults.httpHeader) }
     var builderDefaultHttpKey by rememberSaveable { mutableStateOf(appDefaults.httpKey) }
+    var builderDefaultNtfyTopic by rememberSaveable { mutableStateOf(defaultNtfySeed) }
     var builderDefaultSshUser by rememberSaveable { mutableStateOf(appDefaults.sshUser) }
     var builderDefaultGitRepo by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
     var builderDefaultGitFile by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
@@ -247,7 +252,7 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(prefs, credentialsStore) {
-        topic = credentialsStore.ntfyTopic().orEmpty()
+        topic = credentialsStore.ntfyTopic().orEmpty().ifBlank { prefs.ntfySseUrl }
         remoteUrl = credentialsStore.remoteFileUrl().orEmpty()
         accessKey = credentialsStore.accessKey().orEmpty()
         httpHeader = credentialsStore.httpHeaderName().orEmpty()
@@ -481,6 +486,7 @@ fun SettingsScreen(
         val trimmedDefaultHttpAddress = builderDefaultHttpAddress.trim()
         val trimmedDefaultHttpHeader = builderDefaultHttpHeader.trim()
         val trimmedDefaultHttpKey = builderDefaultHttpKey.trim()
+        val trimmedDefaultNtfyTopic = builderDefaultNtfyTopic.trim()
         val trimmedDefaultSshUser = builderDefaultSshUser.trim()
         val trimmedDefaultGitRepo = builderDefaultGitRepo.trim()
         val trimmedDefaultGitFile = builderDefaultGitFile.trim()
@@ -548,6 +554,7 @@ fun SettingsScreen(
         builderDefaultHttpAddress = trimmedDefaultHttpAddress
         builderDefaultHttpHeader = trimmedDefaultHttpHeader
         builderDefaultHttpKey = trimmedDefaultHttpKey
+        builderDefaultNtfyTopic = trimmedDefaultNtfyTopic
         builderDefaultSshUser = trimmedDefaultSshUser
         builderDefaultGitRepo = trimmedDefaultGitRepo
         builderDefaultGitFile = trimmedDefaultGitFile
@@ -579,6 +586,7 @@ fun SettingsScreen(
                         defaultHttpAddress = trimmedDefaultHttpAddress,
                         defaultHttpHeader = trimmedDefaultHttpHeader,
                         defaultHttpKey = trimmedDefaultHttpKey,
+                        defaultNtfyTopic = trimmedDefaultNtfyTopic,
                         defaultSshUser = trimmedDefaultSshUser,
                         defaultGitRepoUrl = trimmedDefaultGitRepo,
                         defaultGitFilePath = trimmedDefaultGitFile,
@@ -854,6 +862,7 @@ fun SettingsScreen(
                     defaultHttpAddress = builderDefaultHttpAddress,
                     defaultHttpHeader = builderDefaultHttpHeader,
                     defaultHttpKey = builderDefaultHttpKey,
+                    defaultNtfyTopic = builderDefaultNtfyTopic,
                     defaultLocalPort = builderDefaultLocalPort,
                     defaultSshUser = builderDefaultSshUser,
                     defaultGitRepoUrl = builderDefaultGitRepo,
@@ -889,6 +898,7 @@ fun SettingsScreen(
                     onDefaultHttpAddressChange = { builderDefaultHttpAddress = it },
                     onDefaultHttpHeaderChange = { builderDefaultHttpHeader = it },
                     onDefaultHttpKeyChange = { builderDefaultHttpKey = it },
+                    onDefaultNtfyTopicChange = { builderDefaultNtfyTopic = it },
                     onDefaultLocalPortChange = {
                         builderDefaultLocalPort = it
                         builderLocalPortError = null
@@ -1887,6 +1897,7 @@ private fun AppBuilderPage(
     defaultHttpAddress: String,
     defaultHttpHeader: String,
     defaultHttpKey: String,
+    defaultNtfyTopic: String,
     defaultLocalPort: String,
     defaultSshUser: String,
     defaultGitRepoUrl: String,
@@ -1909,6 +1920,7 @@ private fun AppBuilderPage(
     onDefaultHttpAddressChange: (String) -> Unit,
     onDefaultHttpHeaderChange: (String) -> Unit,
     onDefaultHttpKeyChange: (String) -> Unit,
+    onDefaultNtfyTopicChange: (String) -> Unit,
     onDefaultLocalPortChange: (String) -> Unit,
     onDefaultSshUserChange: (String) -> Unit,
     onDefaultGitRepoChange: (String) -> Unit,
@@ -2100,6 +2112,16 @@ private fun AppBuilderPage(
                         )
                     }
                 }
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultNtfyTopic,
+                onValueChange = onDefaultNtfyTopicChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_ntfy_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_ntfy_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
             )
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),

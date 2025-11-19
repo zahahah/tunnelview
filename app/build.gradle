@@ -66,6 +66,7 @@ android {
         buildConfigField "String", "DEFAULT_HTTP_ADDRESS", quoteString(envValue("DEFAULT_HTTP_ADDRESS"))
         buildConfigField "String", "DEFAULT_HTTP_HEADER", quoteString(envValue("DEFAULT_HTTP_HEADER"))
         buildConfigField "String", "DEFAULT_HTTP_KEY", quoteString(envValue("DEFAULT_HTTP_KEY"))
+        buildConfigField "String", "DEFAULT_NTFY", quoteString(envValue("DEFAULT_NTFY"))
         buildConfigField "String", "DEFAULT_SSH_USER", quoteString(envValue("DEFAULT_SSH_USER"))
         buildConfigField "String", "DEFAULT_GIT_REPO_URL", quoteString(envValue("DEFAULT_GIT_REPO_URL"))
         buildConfigField "String", "DEFAULT_GIT_FILE_PATH", quoteString(envValue("DEFAULT_GIT_FILE_PATH"))

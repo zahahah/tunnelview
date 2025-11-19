@@ -2,6 +2,7 @@ package com.zahah.tunnelview
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.core.content.edit
 import org.json.JSONArray
 import java.util.Locale
@@ -25,18 +26,30 @@ class Prefs(ctx: Context) {
 
     var ntfySseUrl: String
         get() {
-            val stored = sp.getString("ntfyWsUrl", null)
+            val rawStored = sp.getString("ntfyWsUrl", null)
+            val normalizedStored = normalizeNtfySseValue(rawStored)
+            val fallbackTopic = appDefaults.ntfyTopic.ifBlank { DEFAULT_NTFY_TOPIC }
+            val fallback = buildNtfySseUrl(fallbackTopic)
             val corrected = when {
-                stored.isNullOrBlank() -> DEFAULT_NTFY_URL
-                stored.equals(LEGACY_DEFAULT_NTFY_URL, ignoreCase = true) -> DEFAULT_NTFY_URL
-                else -> stored
+                normalizedStored.isNullOrBlank() -> fallback
+                normalizedStored.equals(LEGACY_DEFAULT_NTFY_URL, ignoreCase = true) -> fallback
+                else -> normalizedStored
             }
-            if (corrected != stored) {
+            if (corrected != rawStored) {
                 sp.edit { putString("ntfyWsUrl", corrected) }
             }
             return corrected
         }
-        set(value) = sp.edit { putString("ntfyWsUrl", value) }
+        set(value) {
+            val normalized = normalizeNtfySseValue(value)
+            sp.edit {
+                if (normalized == null) {
+                    remove("ntfyWsUrl")
+                } else {
+                    putString("ntfyWsUrl", normalized)
+                }
+            }
+        }
 
     var ntfyFetchUserOverride: Boolean?
         get() = if (sp.contains(KEY_NTFY_USER_OVERRIDE)) {
@@ -438,10 +451,39 @@ class Prefs(ctx: Context) {
         private const val MIN_TIMEOUT_SECONDS = 15
         private const val MAX_TIMEOUT_SECONDS = 30
         private const val DEFAULT_LOCAL_PORT = 8090
-        private const val DEFAULT_NTFY_URL = "https://ntfy.sh/s10e-server-ngrok/sse"
+        private const val DEFAULT_NTFY_TOPIC = "s10e-server-ngrok"
         private const val LEGACY_DEFAULT_NTFY_URL = "https://ntfy.sh/ntfy-update-from-server/sse"
         const val DEFAULT_APP_LANGUAGE = "en"
         const val DEFAULT_THEME_COLOR = "indigo"
         const val DEFAULT_THEME_MODE = "system"
+
+        private fun normalizeNtfySseValue(raw: String?): String? {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isEmpty()) return null
+            if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) {
+                val uri = runCatching { Uri.parse(trimmed) }.getOrNull() ?: return trimmed
+                val scheme = uri.scheme?.takeIf { it.equals("http", true) || it.equals("https", true) }
+                    ?.lowercase(Locale.ROOT)
+                    ?: "https"
+                val host = uri.host ?: return null
+                val portPart = if (uri.port != -1) ":${uri.port}" else ""
+                val segments = uri.pathSegments.filter { it.isNotBlank() }.toMutableList()
+                if (segments.isEmpty()) {
+                    segments.add("sse")
+                } else if (!segments.last().equals("sse", true)) {
+                    segments.add("sse")
+                }
+                val path = segments.joinToString("/", prefix = "/")
+                val query = uri.encodedQuery?.let { "?$it" } ?: ""
+                return "$scheme://$host$portPart$path$query"
+            }
+            val sanitizedTopic = trimmed.trim('/').takeIf { it.isNotEmpty() } ?: return null
+            return buildNtfySseUrl(sanitizedTopic)
+        }
+
+        private fun buildNtfySseUrl(topic: String): String {
+            val normalizedTopic = topic.trim().trim('/').takeIf { it.isNotEmpty() } ?: DEFAULT_NTFY_TOPIC
+            return "https://ntfy.sh/$normalizedTopic/sse"
+        }
     }
 }
