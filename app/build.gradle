@@ -55,8 +55,8 @@ android {
         applicationId "com.zahah.tunnelview"
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName "1.5.0"
+        versionCode 16
+        versionName "1.6.0"
         vectorDrawables.useSupportLibrary = true
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_HOST", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_HOST"))
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_PORT", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_PORT"))
