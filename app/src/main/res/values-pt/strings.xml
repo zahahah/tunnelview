@@ -1,7 +1,6 @@
 <resources>
     <string name="app_name">TunnelView</string>
 
-    <string name="default_ntfy_ws">https://ntfy.sh/s10e-server-ngrok/sse</string>
     <string name="default_local_port">8090</string>
     <string name="default_remote_host">192.168.0.7</string>
     <string name="default_remote_port">3000</string>
@@ -194,7 +193,7 @@
     <string name="app_builder_default_http_key_label">Valor do cabeçalho HTTP padrão</string>
     <string name="app_builder_default_http_key_placeholder">Valor enviado no cabeçalho (opcional)</string>
     <string name="app_builder_default_ntfy_label">Tópico ntfy padrão</string>
-    <string name="app_builder_default_ntfy_placeholder">s10e-server-ngrok</string>
+    <string name="app_builder_default_ntfy_placeholder">ex.: meu-topico-ntfy</string>
     <string name="menu_settings">Configurações</string>
     <string name="menu_open_ntfy">Abrir ntfy.sh</string>
     <string name="menu_diagnostics">Diagnóstico</string>

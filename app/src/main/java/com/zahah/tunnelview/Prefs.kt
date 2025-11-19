@@ -451,7 +451,8 @@ class Prefs(ctx: Context) {
         private const val MIN_TIMEOUT_SECONDS = 15
         private const val MAX_TIMEOUT_SECONDS = 30
         private const val DEFAULT_LOCAL_PORT = 8090
-        private const val DEFAULT_NTFY_TOPIC = "s10e-server-ngrok"
+        private val DEFAULT_NTFY_TOPIC: String
+            get() = BuildConfig.DEFAULT_NTFY.orEmpty()
         private const val LEGACY_DEFAULT_NTFY_URL = "https://ntfy.sh/ntfy-update-from-server/sse"
         const val DEFAULT_APP_LANGUAGE = "en"
         const val DEFAULT_THEME_COLOR = "indigo"
@@ -482,7 +483,9 @@ class Prefs(ctx: Context) {
         }
 
         private fun buildNtfySseUrl(topic: String): String {
-            val normalizedTopic = topic.trim().trim('/').takeIf { it.isNotEmpty() } ?: DEFAULT_NTFY_TOPIC
+            val normalizedTopic = topic.trim().trim('/').takeIf { it.isNotEmpty() }
+                ?: DEFAULT_NTFY_TOPIC.trim().trim('/').takeIf { it.isNotEmpty() }
+                ?: return ""
             return "https://ntfy.sh/$normalizedTopic/sse"
         }
     }
