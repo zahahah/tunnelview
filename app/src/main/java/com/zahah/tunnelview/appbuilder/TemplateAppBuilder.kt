@@ -237,6 +237,10 @@ class TemplateAppBuilder(private val context: Context) {
         val fallbackNtfyTopic = BuildConfig.DEFAULT_NTFY.orEmpty()
         val fallbackGitRepo = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty()
         val fallbackGitFile = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty()
+        val fallbackAppUpdateFile = BuildConfig.DEFAULT_APP_UPDATE_FILE.orEmpty()
+        val fallbackAppUpdateRepo = BuildConfig.DEFAULT_APP_UPDATE_REPO_URL.orEmpty()
+        val fallbackAppUpdateBranch = BuildConfig.DEFAULT_APP_UPDATE_BRANCH.orEmpty()
+        val fallbackAppUpdateKey = BuildConfig.DEFAULT_APP_UPDATE_PRIVATE_KEY.orEmpty()
         val fallbackSshKey = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()
         val fallbackGitKey = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()
         val fallbackLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty()
@@ -254,6 +258,10 @@ class TemplateAppBuilder(private val context: Context) {
         val sshUser = request.defaultSshUser
         val gitRepo = request.defaultGitRepoUrl
         val gitFile = request.defaultGitFilePath
+        val appUpdateFile = request.defaultAppUpdateFile
+        val appUpdateRepo = request.defaultAppUpdateRepoUrl
+        val appUpdateBranch = request.defaultAppUpdateBranch
+        val appUpdateKey = request.defaultAppUpdatePrivateKey
         val sshKey = request.defaultSshPrivateKey
         val gitKey = request.defaultGitPrivateKey
         val settingsPassword = request.defaultSettingsPassword
@@ -271,6 +279,10 @@ class TemplateAppBuilder(private val context: Context) {
             sshUser == fallbackSshUser &&
             gitRepo == fallbackGitRepo &&
             gitFile == fallbackGitFile &&
+            appUpdateFile == fallbackAppUpdateFile &&
+            appUpdateRepo == fallbackAppUpdateRepo &&
+            appUpdateBranch == fallbackAppUpdateBranch &&
+            appUpdateKey == fallbackAppUpdateKey &&
             sshKey == fallbackSshKey &&
             gitKey == fallbackGitKey &&
             localPort == fallbackLocalPort &&
@@ -297,6 +309,10 @@ class TemplateAppBuilder(private val context: Context) {
             put("sshUser", sshUser)
             put("gitRepoUrl", gitRepo)
             put("gitFilePath", gitFile)
+            put("appUpdateRepoUrl", appUpdateRepo)
+            put("appUpdateBranch", appUpdateBranch)
+            put("appUpdateFileName", appUpdateFile)
+            put("appUpdatePrivateKey", appUpdateKey)
             put("sshPrivateKey", sshKey)
             put("gitPrivateKey", gitKey)
             put("settingsPassword", settingsPassword)
@@ -352,18 +368,59 @@ class TemplateAppBuilder(private val context: Context) {
         closeEntry()
     }
 
-    fun install(apkUri: Uri) {
-        val installIntent = buildInstallIntent(apkUri)
-            ?: throw IllegalStateException("Nenhum instalador compatível encontrado no dispositivo")
-        grantUriPermissionToInstallers(apkUri, installIntent)
-        try {
-            context.startActivity(installIntent)
-        } catch (activityError: ActivityNotFoundException) {
-            throw IllegalStateException("Falha ao abrir o instalador do Android", activityError)
-        }
+    fun install(file: File) {
+        require(file.exists()) { "APK inexistente para instalação" }
+        val sourceUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        if (tryStartInstallWithFallbacks(sourceUri)) return
+        val fallbackUri = exportToDownloads(file)
+        if (tryStartInstallWithFallbacks(fallbackUri)) return
+        throw IllegalStateException("Falha ao abrir o instalador do Android")
     }
 
+    fun install(apkUri: Uri) {
+        if (tryStartInstallWithFallbacks(apkUri)) return
+        throw IllegalStateException("Falha ao abrir o instalador do Android")
+    }
+
+    @Suppress("DEPRECATION")
     private fun buildInstallIntent(apkUri: Uri): Intent? {
+        val baseFlags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            data = apkUri
+            type = APK_MIME_TYPE
+            addFlags(baseFlags)
+            addCategory(Intent.CATEGORY_DEFAULT)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, context.packageName)
+            putExtra(Intent.EXTRA_RETURN_RESULT, true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+            }
+        }
+        return installIntent.takeIf { canResolveIntent(it) }
+    }
+
+    private fun tryStartInstallWithFallbacks(apkUri: Uri): Boolean {
+        val intents = buildList {
+            buildInstallIntent(apkUri)?.let { add(it) }
+            buildViewerIntent(apkUri)?.let { add(it) }
+        }
+        intents.forEach { intent ->
+            grantUriPermissionToInstallers(apkUri, intent)
+            val started = runCatching {
+                context.startActivity(intent)
+                true
+            }.getOrDefault(false)
+            if (started) return true
+        }
+        return false
+    }
+
+    private fun buildViewerIntent(apkUri: Uri): Intent? {
         val baseFlags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         val viewerIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(apkUri, APK_MIME_TYPE)
@@ -380,6 +437,11 @@ class TemplateAppBuilder(private val context: Context) {
             addCategory(Intent.CATEGORY_DEFAULT)
         }
         return viewerIntent.takeIf { canResolveIntent(it) }
+    }
+
+    private fun exportToDownloads(source: File): Uri {
+        val fileName = source.name.ifBlank { "update-${System.currentTimeMillis()}.apk" }
+        return saveToDownloads(source, fileName)
     }
 
     private fun canResolveIntent(intent: Intent): Boolean {
@@ -671,6 +733,50 @@ class TemplateAppBuilder(private val context: Context) {
         private val PACKAGE_REGEX = Regex("^[a-zA-Z][A-Za-z0-9_]*(\\.[a-zA-Z][A-Za-z0-9_]*)+")
 
         private fun Long.toBigInteger() = java.math.BigInteger.valueOf(this)
+
+        fun defaultOutputFileName(appName: String, versionName: String): String {
+            val sanitized = appName.lowercase(Locale.getDefault())
+                .map { ch ->
+                    when {
+                        ch.isLetterOrDigit() -> ch
+                        ch == '-' -> '-'
+                        else -> '_'
+                    }
+                }
+                .joinToString("")
+                .trim('_')
+                .ifBlank { "custom_app" }
+            val sanitizedVersion = versionName.lowercase(Locale.getDefault())
+                .map { ch ->
+                    when {
+                        ch.isLetterOrDigit() -> ch
+                        ch == '.' || ch == '-' -> ch
+                        else -> '_'
+                    }
+                }
+                .joinToString("")
+                .trim('_', '-', '.')
+            return if (sanitizedVersion.isNotEmpty()) {
+                "$sanitized-$sanitizedVersion.apk"
+            } else {
+                "$sanitized.apk"
+            }
+        }
+
+        fun defaultUpdateFilePattern(appName: String): String {
+            val sanitized = appName.lowercase(Locale.getDefault())
+                .map { ch ->
+                    when {
+                        ch.isLetterOrDigit() -> ch
+                        ch == '-' -> '-'
+                        else -> '_'
+                    }
+                }
+                .joinToString("")
+                .trim('_')
+                .ifBlank { "custom_app" }
+            return "$sanitized-*.apk"
+        }
     }
 }
 
@@ -691,6 +797,10 @@ data class AppBuildRequest(
     val defaultSshUser: String = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
     val defaultGitRepoUrl: String = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
     val defaultGitFilePath: String = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),
+    val defaultAppUpdateRepoUrl: String = BuildConfig.DEFAULT_APP_UPDATE_REPO_URL.orEmpty(),
+    val defaultAppUpdateBranch: String = BuildConfig.DEFAULT_APP_UPDATE_BRANCH.orEmpty(),
+    val defaultAppUpdateFile: String = BuildConfig.DEFAULT_APP_UPDATE_FILE.orEmpty(),
+    val defaultAppUpdatePrivateKey: String = BuildConfig.DEFAULT_APP_UPDATE_PRIVATE_KEY.orEmpty(),
     val defaultSshPrivateKey: String = BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty(),
     val defaultGitPrivateKey: String = BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty(),
     val defaultSettingsPassword: String = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),

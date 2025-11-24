@@ -314,6 +314,19 @@ private fun DiagnosticsSummary(snapshot: TunnelManager.Snapshot) {
             text = stringResource(id = R.string.diagnostics_last_failure, lastFailure),
             style = MaterialTheme.typography.bodyMedium
         )
+        val updateStatus = prefs.lastGitUpdateStatus?.takeIf { it.isNotBlank() }
+            ?: stringResource(id = R.string.diagnostics_value_none)
+        val updateWhen = prefs.lastGitUpdateStatusAt.takeIf { it > 0L }
+            ?.let { dateFormat.format(Date(it)) }
+            ?: stringResource(id = R.string.diagnostics_value_none)
+        Text(
+            text = stringResource(id = R.string.diagnostics_git_update_status, updateStatus),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(id = R.string.diagnostics_git_update_when, updateWhen),
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 

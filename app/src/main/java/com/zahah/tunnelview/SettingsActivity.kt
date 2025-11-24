@@ -47,13 +47,41 @@ import com.zahah.tunnelview.ui.settings.SettingsScreen
 import com.zahah.tunnelview.ui.theme.AppThemeManager
 import com.zahah.tunnelview.work.EndpointSyncWorker
 import com.zahah.tunnelview.ui.theme.TunnelViewTheme
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.zahah.tunnelview.appbuilder.TemplateAppBuilder
+import com.zahah.tunnelview.network.HttpClient
+import com.zahah.tunnelview.update.GitUpdateChecker
+import com.zahah.tunnelview.storage.CredentialsStore
+import com.zahah.tunnelview.AppDefaultsProvider
+import com.zahah.tunnelview.update.UpdateDialogFactory
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 
 class SettingsActivity : ComponentActivity() {
 
     private lateinit var prefs: Prefs
+    private val appDefaults by lazy { AppDefaultsProvider.defaults(applicationContext) }
     private val sharedPrefs: SharedPreferences by lazy {
         getSharedPreferences("prefs", Context.MODE_PRIVATE)
     }
+    private val credentialsStore by lazy { CredentialsStore.getInstance(applicationContext) }
+    private val updateChecker: GitUpdateChecker by lazy {
+        GitUpdateChecker(applicationContext, HttpClient.shared(applicationContext))
+    }
+    @Suppress("unused")
+    private val appUpdateKeyPlaceholder by lazy {
+        applicationContext.resources.openRawResource(R.raw.id_ed25519_git_app_updates)
+            .bufferedReader()
+            .use { it.readText() }
+    }
+    private var updateProgressDialog: AlertDialog? = null
+    private var updateCheckJob: Job? = null
+    private var updateCheckCancelled = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(AppLocaleManager.wrapContext(newBase))
@@ -94,13 +122,63 @@ class SettingsActivity : ComponentActivity() {
                     SettingsScreen(
                         themeModeId = themeModeId,
                         themeColorId = themeColorId,
-                        onSyncNow = { EndpointSyncWorker.enqueueImmediate(applicationContext) },
+                        onSyncNow = {
+                            EndpointSyncWorker.enqueueImmediate(applicationContext)
+                            lifecycleScope.launch {
+                                updateChecker.checkForUpdates(force = true)?.let { candidate ->
+                                    showUpdatePrompt(candidate)
+                                }
+                            }
+                        },
                         onTestReconnect = {
                             val intent = Intent(this, TunnelService::class.java).setAction(Actions.RECONNECT)
                             if (prefs.persistentNotificationEnabled) {
                                 ContextCompat.startForegroundService(this, intent)
                             } else {
                                 startService(intent)
+                            }
+                        },
+                        onCheckUpdates = {
+                            if (updateCheckJob?.isActive == true) return@SettingsScreen
+                            updateCheckCancelled = false
+                            updateCheckJob = lifecycleScope.launch {
+                                showCheckingDialog()
+                                try {
+                                    if (!credentialsStore.gitUpdateEnabled(appDefaults.appUpdateFileName.isNotBlank())) {
+                                        if (!updateCheckCancelled) {
+                                            showNoUpdateDialog(getString(R.string.git_update_not_configured))
+                                        }
+                                        return@launch
+                                    }
+                                    val candidate = try {
+                                        updateChecker.checkForUpdates(force = true)
+                                    } catch (cancelled: CancellationException) {
+                                        return@launch
+                                    } catch (error: Throwable) {
+                                        val now = System.currentTimeMillis()
+                                        prefs.lastGitUpdateStatus = "Check failed: ${error.message ?: error::class.java.simpleName}"
+                                        prefs.lastGitUpdateStatusAt = now
+                                        prefs.lastGitUpdateCheckAtMillis = now
+                                        if (!updateCheckCancelled) {
+                                            showNoUpdateDialog(
+                                                buildNoUpdateMessage(
+                                                    fallback = getString(R.string.git_update_error_generic)
+                                                )
+                                            )
+                                        }
+                                        return@launch
+                                    }
+                                    if (!isActive || updateCheckCancelled) return@launch
+                                    if (candidate != null) {
+                                        showUpdatePrompt(candidate)
+                                    } else {
+                                        showNoUpdateDialog(buildNoUpdateMessage())
+                                    }
+                                } finally {
+                                    hideCheckingDialog()
+                                    updateCheckJob = null
+                                    updateCheckCancelled = false
+                                }
                             }
                         },
                         onExit = { finish() }
@@ -121,6 +199,57 @@ class SettingsActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun showUpdatePrompt(candidate: GitUpdateChecker.UpdateCandidate) {
+        val versionLabel = candidate.versionName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "$it (${candidate.versionCode})" }
+            ?: candidate.versionCode.toString()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.git_update_available_title)
+            .setMessage(getString(R.string.git_update_available_message, versionLabel))
+            .setPositiveButton(R.string.git_update_action_update) { dialog, _ ->
+                dialog.dismiss()
+                installCandidate(candidate)
+            }
+            .setNegativeButton(R.string.git_update_action_remind_later) { dialog, _ ->
+                dialog.dismiss()
+                updateChecker.remindLater(candidate.versionCode)
+                runCatching { candidate.file.delete() }
+            }
+            .show()
+    }
+
+    private fun installCandidate(candidate: GitUpdateChecker.UpdateCandidate) {
+        runCatching {
+            updateChecker.install(candidate)
+        }.onFailure {
+            showNoUpdateDialog(getString(R.string.git_update_install_failed))
+        }
+    }
+
+    private fun showNoUpdateDialog(message: String) {
+        UpdateDialogFactory.showNoUpdateDialog(this, message)
+    }
+
+    private fun buildNoUpdateMessage(fallback: String? = null): String {
+        return UpdateDialogFactory.buildNoUpdateMessage(this, prefs, fallback)
+    }
+
+    private fun showCheckingDialog() {
+        hideCheckingDialog()
+        updateCheckCancelled = false
+        updateProgressDialog = UpdateDialogFactory.showCheckingDialog(this) {
+            updateCheckCancelled = true
+            updateCheckJob?.cancel()
+            hideCheckingDialog()
+        }
+    }
+
+    private fun hideCheckingDialog() {
+        updateProgressDialog?.dismiss()
+        updateProgressDialog = null
     }
 }
 

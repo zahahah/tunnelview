@@ -379,6 +379,36 @@ class Prefs(ctx: Context) {
         get() = sp.getLong(KEY_LAST_GIT_SYNC_AT, 0L)
         set(value) = sp.edit { putLong(KEY_LAST_GIT_SYNC_AT, value) }
 
+    var lastGitUpdateCheckAtMillis: Long
+        get() = sp.getLong(KEY_LAST_GIT_UPDATE_CHECK_AT, 0L)
+        set(value) = sp.edit { putLong(KEY_LAST_GIT_UPDATE_CHECK_AT, value) }
+
+    var snoozedGitUpdateVersionCode: Long
+        get() = sp.getLong(KEY_GIT_UPDATE_SNOOZED_VERSION, 0L)
+        set(value) = sp.edit { putLong(KEY_GIT_UPDATE_SNOOZED_VERSION, value) }
+
+    var snoozedGitUpdateAtMillis: Long
+        get() = sp.getLong(KEY_GIT_UPDATE_SNOOZED_AT, 0L)
+        set(value) = sp.edit { putLong(KEY_GIT_UPDATE_SNOOZED_AT, value) }
+
+    var latestInstalledGitUpdateVersion: Long
+        get() = sp.getLong(KEY_GIT_UPDATE_APPLIED_VERSION, 0L)
+        set(value) = sp.edit { putLong(KEY_GIT_UPDATE_APPLIED_VERSION, value) }
+
+    var lastGitUpdateStatus: String?
+        get() = sp.getString(KEY_GIT_UPDATE_STATUS, null)
+        set(value) = sp.edit {
+            if (value.isNullOrBlank()) {
+                remove(KEY_GIT_UPDATE_STATUS)
+            } else {
+                putString(KEY_GIT_UPDATE_STATUS, value)
+            }
+        }
+
+    var lastGitUpdateStatusAt: Long
+        get() = sp.getLong(KEY_GIT_UPDATE_STATUS_AT, 0L)
+        set(value) = sp.edit { putLong(KEY_GIT_UPDATE_STATUS_AT, value) }
+
     var forceIpv4: Boolean
         get() = sp.getBoolean(KEY_FORCE_IPV4, false)
         set(value) = sp.edit { putBoolean(KEY_FORCE_IPV4, value) }
@@ -446,6 +476,12 @@ class Prefs(ctx: Context) {
         const val KEY_CONNECTION_DEBUG_LOGGING = "connectionDebugLoggingEnabled"
         private const val KEY_HIDE_CONNECTION_MESSAGES = "hideConnectionMessages"
         private const val KEY_LAST_GIT_SYNC_AT = "gitFallbackLastSuccessAt"
+        private const val KEY_LAST_GIT_UPDATE_CHECK_AT = "gitUpdateLastCheckAt"
+        private const val KEY_GIT_UPDATE_SNOOZED_VERSION = "gitUpdateSnoozedVersionCode"
+        private const val KEY_GIT_UPDATE_SNOOZED_AT = "gitUpdateSnoozedAt"
+        private const val KEY_GIT_UPDATE_APPLIED_VERSION = "gitUpdateAppliedVersionCode"
+        private const val KEY_GIT_UPDATE_STATUS = "gitUpdateStatus"
+        private const val KEY_GIT_UPDATE_STATUS_AT = "gitUpdateStatusAt"
         private const val DEFAULT_TIMEOUT_SECONDS = 20
         private const val DEFAULT_KEEPALIVE_SECONDS = 20
         private const val MIN_TIMEOUT_SECONDS = 15

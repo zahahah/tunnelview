@@ -75,19 +75,25 @@ import com.zahah.tunnelview.ssh.TunnelManager
 import com.zahah.tunnelview.network.HttpClient
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
+import com.zahah.tunnelview.update.GitUpdateChecker
+import com.zahah.tunnelview.update.UpdateDialogFactory
+import com.zahah.tunnelview.AppDefaultsProvider
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.TimeoutCancellationException
 import okhttp3.Cache
 import okhttp3.CacheControl
 import okhttp3.OkHttpClient
@@ -99,6 +105,7 @@ import java.io.File
 import java.io.InputStream
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 import kotlin.math.max
 import kotlin.text.Charsets
@@ -119,6 +126,9 @@ class MainCoordinator(
     private lateinit var prefs: Prefs
     private val proxyRepository: ProxyRepository by lazy { ProxyRepository.get(activity) }
     private val credentialsStore: CredentialsStore by lazy { CredentialsStore.getInstance(activity) }
+    private val updateChecker: GitUpdateChecker by lazy {
+        GitUpdateChecker(activity.applicationContext, HttpClient.shared(activity.applicationContext))
+    }
     private lateinit var tunnelErrorContainer: View
     private lateinit var tunnelErrorMessage: TextView
     private lateinit var tunnelRetryButton: MaterialButton
@@ -164,6 +174,14 @@ class MainCoordinator(
     private var tunnelStateJob: Job? = null
     private var endpointJob: Job? = null
     private var proxyStatusJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var updateDialogShowing = false
+    private var lastForegroundUpdateCheckAt = 0L
+    private val foregroundUpdateCooldownMs = TimeUnit.MINUTES.toMillis(5)
+    private val updateCheckTimeoutMs = TimeUnit.SECONDS.toMillis(45)
+    private var updateCheckCancelled = false
+    private var shouldCheckUpdateOnForeground = true
+    private var updateProgressDialog: androidx.appcompat.app.AlertDialog? = null
     private var lastEndpointSignature: Pair<String, Int>? = null
     private var skipFirstEndpointEmission = true
     private val connectionRetryDelayMs = 3_000L
@@ -392,16 +410,19 @@ class MainCoordinator(
                 startPrimaryNavigation(force = true)
             } else if (webView.url.isNullOrEmpty()) {
                 startPrimaryNavigation(force = true)
-            } else {
-                showContent()
-            }
+        } else {
+            showContent()
+        }
         }, 400L)
         resumeConnectionFlow()
+        ensureUpdateCheckOnAppOpen()
     }
 
     fun onResume() {
         isForeground = true
         resumeConnectionFlow()
+        ensureUpdateCheckOnAppOpen()
+        maybeCheckForAppUpdate(fromForeground = true)
     }
 
     fun onStop() {
@@ -409,6 +430,10 @@ class MainCoordinator(
         pauseConnectionFlow()
         stopFallbackWatchers()
         EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
+        if (!activity.isChangingConfigurations) {
+            shouldCheckUpdateOnForeground = true
+        }
+        updateCheckJob?.cancel()
     }
 
     fun onDestroy() {
@@ -649,6 +674,10 @@ class MainCoordinator(
                 }
                 R.id.action_open_diagnostics -> {
                     activity.startActivity(Intent(activity, ConnectionDiagnosticsActivity::class.java))
+                    true
+                }
+                R.id.action_check_updates -> {
+                    manualUpdateCheck()
                     true
                 }
                 else -> false
@@ -1395,6 +1424,7 @@ class MainCoordinator(
         }
         startNtfyUpdates()
         fallbackWatchersRunning = true
+        maybeCheckForAppUpdate(forceImmediate)
     }
 
     private fun stopFallbackWatchers() {
@@ -1413,6 +1443,156 @@ class MainCoordinator(
     private fun ensureFallbackWatchersRunning(forceImmediate: Boolean) {
         if (!fallbackWatchersRunning) {
             startFallbackWatchers(forceImmediate)
+        }
+    }
+
+    private fun ensureUpdateCheckOnAppOpen() {
+        if (!shouldCheckUpdateOnForeground) return
+        shouldCheckUpdateOnForeground = false
+        maybeCheckForAppUpdate(force = true, fromForeground = true)
+    }
+
+    private fun maybeCheckForAppUpdate(force: Boolean = false, fromForeground: Boolean = false) {
+        if (updateCheckJob?.isActive == true) return
+        if (fromForeground) {
+            val now = SystemClock.elapsedRealtime()
+            if (!force && now - lastForegroundUpdateCheckAt < foregroundUpdateCooldownMs) {
+                return
+            }
+            lastForegroundUpdateCheckAt = now
+        }
+        updateCheckJob = lifecycleScope.launch {
+            val currentJob = coroutineContext[Job]
+            try {
+                val candidate = withTimeoutOrNull(updateCheckTimeoutMs) {
+                    updateChecker.checkForUpdates(force || fromForeground)
+                } ?: return@launch
+                if (!isForeground) return@launch
+                showUpdateDialog(candidate)
+            } finally {
+                if (updateCheckJob === currentJob) {
+                    updateCheckJob = null
+                }
+            }
+        }
+    }
+
+    private fun manualUpdateCheck() {
+        updateCheckJob?.cancel()
+        updateCheckCancelled = false
+        updateCheckJob = lifecycleScope.launch {
+            val currentJob = coroutineContext[Job]
+            showCheckingDialog()
+            try {
+                val defaultEnabled = AppDefaultsProvider.defaults(activity).appUpdateFileName.isNotBlank()
+                if (!credentialsStore.gitUpdateEnabled(defaultEnabled)) {
+                    if (!updateCheckCancelled) {
+                        showNoUpdateDialog(activity.getString(R.string.git_update_not_configured))
+                    }
+                    return@launch
+                }
+                val candidate = try {
+                    withTimeout(updateCheckTimeoutMs) { updateChecker.checkForUpdates(force = true) }
+                } catch (timeout: TimeoutCancellationException) {
+                    val now = System.currentTimeMillis()
+                    prefs.lastGitUpdateStatus = "Check timed out"
+                    prefs.lastGitUpdateStatusAt = now
+                    prefs.lastGitUpdateCheckAtMillis = now
+                    if (isActive && !updateCheckCancelled) {
+                        showNoUpdateDialog(
+                            buildNoUpdateMessage(
+                                fallback = activity.getString(R.string.git_update_error_generic)
+                            )
+                        )
+                    }
+                    return@launch
+                } catch (cancelled: CancellationException) {
+                    return@launch
+                } catch (error: Throwable) {
+                    val now = System.currentTimeMillis()
+                    prefs.lastGitUpdateStatus = "Check failed: ${error.message ?: error::class.java.simpleName}"
+                    prefs.lastGitUpdateStatusAt = now
+                    prefs.lastGitUpdateCheckAtMillis = now
+                    if (isActive && !updateCheckCancelled) {
+                        showNoUpdateDialog(
+                            buildNoUpdateMessage(
+                                fallback = activity.getString(R.string.git_update_error_generic)
+                            )
+                        )
+                    }
+                    return@launch
+                }
+                if (!isActive || updateCheckCancelled) return@launch
+                if (candidate != null) {
+                    showUpdateDialog(candidate)
+                } else {
+                    showNoUpdateDialog(buildNoUpdateMessage())
+                }
+            } finally {
+                hideCheckingDialog()
+                if (updateCheckJob === currentJob) {
+                    updateCheckJob = null
+                }
+                updateCheckCancelled = false
+            }
+        }
+    }
+
+    private fun showUpdateDialog(candidate: GitUpdateChecker.UpdateCandidate) {
+        if (updateDialogShowing) return
+        updateDialogShowing = true
+        val versionLabel = candidate.versionName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "$it (${candidate.versionCode})" }
+            ?: candidate.versionCode.toString()
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.git_update_available_title)
+            .setMessage(activity.getString(R.string.git_update_available_message, versionLabel))
+            .setPositiveButton(R.string.git_update_action_update) { dialog, _ ->
+                dialog.dismiss()
+                installUpdateCandidate(candidate)
+            }
+            .setNegativeButton(R.string.git_update_action_remind_later) { dialog, _ ->
+                dialog.dismiss()
+                updateChecker.remindLater(candidate.versionCode)
+                runCatching { candidate.file.delete() }
+            }
+            .setOnDismissListener { updateDialogShowing = false }
+            .show()
+    }
+
+    private fun showCheckingDialog() {
+        hideCheckingDialog()
+        updateCheckCancelled = false
+        updateProgressDialog = UpdateDialogFactory.showCheckingDialog(activity) {
+            updateCheckCancelled = true
+            updateCheckJob?.cancel()
+            hideCheckingDialog()
+        }
+    }
+
+    private fun hideCheckingDialog() {
+        updateProgressDialog?.dismiss()
+        updateProgressDialog = null
+    }
+
+    private fun showNoUpdateDialog(message: String) {
+        UpdateDialogFactory.showNoUpdateDialog(activity, message)
+    }
+
+    private fun buildNoUpdateMessage(fallback: String? = null): String {
+        return UpdateDialogFactory.buildNoUpdateMessage(activity, prefs, fallback)
+    }
+
+    private fun installUpdateCandidate(candidate: GitUpdateChecker.UpdateCandidate) {
+        runCatching {
+            updateChecker.install(candidate)
+        }.onFailure {
+            Toast.makeText(
+                activity,
+                activity.getString(R.string.git_update_install_failed),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 

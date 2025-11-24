@@ -46,6 +46,26 @@ class CredentialsStore private constructor(context: Context) {
         write(KEY_GIT_PRIVATE_KEY, value)
     }
 
+    suspend fun setAppUpdatePrivateKey(value: String?) {
+        write(KEY_APP_UPDATE_PRIVATE_KEY, value)
+    }
+
+    suspend fun setGitUpdateEnabled(value: Boolean?) {
+        write(KEY_GIT_UPDATE_ENABLED, value)
+    }
+
+    suspend fun setGitUpdateFileName(value: String?) {
+        write(KEY_GIT_UPDATE_FILE_NAME, value)
+    }
+
+    suspend fun setAppUpdateRepoUrl(value: String?) {
+        write(KEY_APP_UPDATE_REPO_URL, value)
+    }
+
+    suspend fun setAppUpdateBranch(value: String?) {
+        write(KEY_APP_UPDATE_BRANCH, value)
+    }
+
     suspend fun setHttpHeaderName(value: String?) {
         write(KEY_HTTP_HEADER_NAME, value)
     }
@@ -78,6 +98,37 @@ class CredentialsStore private constructor(context: Context) {
         KEY_GIT_PRIVATE_KEY,
         null,
         AppDefaultsProvider.defaults(appContext).gitPrivateKey
+    )
+
+    fun appUpdatePrivateKey(): String? = read(
+        KEY_APP_UPDATE_PRIVATE_KEY,
+        null,
+        AppDefaultsProvider.defaults(appContext).appUpdatePrivateKey
+    )
+
+    fun gitUpdateEnabled(defaultEnabled: Boolean = false): Boolean {
+        if (securePrefs.contains(KEY_GIT_UPDATE_ENABLED)) {
+            return securePrefs.getBoolean(KEY_GIT_UPDATE_ENABLED, defaultEnabled)
+        }
+        return defaultEnabled
+    }
+
+    fun gitUpdateFileName(): String? = read(
+        KEY_GIT_UPDATE_FILE_NAME,
+        null,
+        AppDefaultsProvider.defaults(appContext).appUpdateFileName
+    )
+
+    fun appUpdateRepoUrl(): String? = read(
+        KEY_APP_UPDATE_REPO_URL,
+        null,
+        AppDefaultsProvider.defaults(appContext).appUpdateRepoUrl
+    )
+
+    fun appUpdateBranch(): String? = read(
+        KEY_APP_UPDATE_BRANCH,
+        null,
+        AppDefaultsProvider.defaults(appContext).appUpdateBranch
     )
 
     fun httpHeaderName(): String? = read(
@@ -119,6 +170,16 @@ class CredentialsStore private constructor(context: Context) {
                 remove(key)
             } else {
                 putString(key, value.trim())
+            }
+        }.apply()
+    }
+
+    private suspend fun write(key: String, value: Boolean?) = withContext(Dispatchers.IO) {
+        securePrefs.edit().apply {
+            if (value == null) {
+                remove(key)
+            } else {
+                putBoolean(key, value)
             }
         }.apply()
     }
@@ -167,6 +228,11 @@ class CredentialsStore private constructor(context: Context) {
         private const val KEY_GIT_BRANCH = "git_branch"
         private const val KEY_GIT_FILE_PATH = "git_file_path"
         private const val KEY_GIT_PRIVATE_KEY = "git_private_key"
+        private const val KEY_APP_UPDATE_PRIVATE_KEY = "app_update_private_key"
+        private const val KEY_GIT_UPDATE_ENABLED = "git_update_enabled"
+        private const val KEY_GIT_UPDATE_FILE_NAME = "git_update_file_name"
+        private const val KEY_APP_UPDATE_REPO_URL = "app_update_repo_url"
+        private const val KEY_APP_UPDATE_BRANCH = "app_update_branch"
         const val KEY_HTTP_HEADER_NAME = "http_header_name"
         const val KEY_HTTP_HEADER_VALUE = "http_header_value"
         private const val LEGACY_PREFS = "prefs"

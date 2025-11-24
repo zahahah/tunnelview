@@ -101,6 +101,7 @@ private enum class SettingsPage { ROOT, REMOTE_UPDATES, SSH, NETWORK, PREFERENCE
 
 private val PACKAGE_NAME_REGEX = Regex("^[a-zA-Z][A-Za-z0-9_]*(\\.[a-zA-Z][A-Za-z0-9_]*)+")
 private const val MIN_SETTINGS_PASSWORD_LENGTH = 4
+private const val DEFAULT_UPDATE_APK_NAME = "tunnelview-update.apk"
 
 @Composable
 fun SettingsScreen(
@@ -109,6 +110,7 @@ fun SettingsScreen(
     themeColorId: String,
     onSyncNow: () -> Unit = {},
     onTestReconnect: () -> Unit = {},
+    onCheckUpdates: () -> Unit = {},
     onExit: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -129,6 +131,13 @@ fun SettingsScreen(
     var gitBranch by rememberSaveable { mutableStateOf("main") }
     var gitFilePath by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
     var gitPrivateKey by rememberSaveable { mutableStateOf(appDefaults.gitPrivateKey) }
+    var appUpdatePrivateKey by rememberSaveable { mutableStateOf(appDefaults.appUpdatePrivateKey) }
+    var appUpdateRepoUrl by rememberSaveable { mutableStateOf(appDefaults.appUpdateRepoUrl) }
+    var appUpdateBranch by rememberSaveable { mutableStateOf(appDefaults.appUpdateBranch) }
+    var gitUpdateEnabled by rememberSaveable { mutableStateOf(appDefaults.appUpdateFileName.isNotBlank()) }
+    var gitUpdateFileName by rememberSaveable {
+        mutableStateOf(appDefaults.appUpdateFileName.ifBlank { DEFAULT_UPDATE_APK_NAME })
+    }
 
     var sshHost by rememberSaveable { mutableStateOf("") }
     var sshPort by rememberSaveable { mutableStateOf("") }
@@ -188,6 +197,10 @@ fun SettingsScreen(
     var builderDefaultSshUser by rememberSaveable { mutableStateOf(appDefaults.sshUser) }
     var builderDefaultGitRepo by rememberSaveable { mutableStateOf(appDefaults.gitRepoUrl) }
     var builderDefaultGitFile by rememberSaveable { mutableStateOf(appDefaults.gitFilePath) }
+    var builderDefaultAppUpdateFile by rememberSaveable { mutableStateOf(appDefaults.appUpdateFileName) }
+    var builderDefaultAppUpdateRepo by rememberSaveable { mutableStateOf(appDefaults.appUpdateRepoUrl) }
+    var builderDefaultAppUpdateBranch by rememberSaveable { mutableStateOf(appDefaults.appUpdateBranch) }
+    var builderDefaultAppUpdateKey by rememberSaveable { mutableStateOf(appDefaults.appUpdatePrivateKey) }
     var builderDefaultSshKey by rememberSaveable { mutableStateOf(appDefaults.sshPrivateKey) }
     var builderDefaultGitKey by rememberSaveable { mutableStateOf(appDefaults.gitPrivateKey) }
     var builderDefaultSettingsPassword by rememberSaveable { mutableStateOf(appDefaults.settingsPassword) }
@@ -259,11 +272,24 @@ fun SettingsScreen(
         httpKey = credentialsStore.httpHeaderValue().orEmpty()
         val defaultGitRepo = appDefaults.gitRepoUrl
         val defaultGitFile = appDefaults.gitFilePath
+        val defaultAppUpdateRepo = appDefaults.appUpdateRepoUrl
+        val defaultAppUpdateBranch = appDefaults.appUpdateBranch.ifBlank { "main" }
+        val defaultAppUpdateFile = appDefaults.appUpdateFileName
         gitRepoUrl = credentialsStore.gitRepoUrl().orEmpty().ifBlank { defaultGitRepo }
         gitBranch = credentialsStore.gitBranch().orEmpty().ifBlank { "main" }
         gitFilePath = credentialsStore.gitFilePath().orEmpty()
             .ifBlank { defaultGitFile }
         gitPrivateKey = credentialsStore.gitPrivateKey().orEmpty()
+        appUpdatePrivateKey = credentialsStore.appUpdatePrivateKey().orEmpty()
+            .ifBlank { appDefaults.appUpdatePrivateKey }
+        appUpdateRepoUrl = credentialsStore.appUpdateRepoUrl().orEmpty()
+            .ifBlank { defaultAppUpdateRepo }
+        appUpdateBranch = credentialsStore.appUpdateBranch().orEmpty()
+            .ifBlank { defaultAppUpdateBranch }
+        gitUpdateEnabled = credentialsStore.gitUpdateEnabled(defaultAppUpdateFile.isNotBlank())
+        gitUpdateFileName = credentialsStore.gitUpdateFileName().orEmpty()
+            .ifBlank { defaultAppUpdateFile }
+            .ifBlank { DEFAULT_UPDATE_APK_NAME }
 
         sshHost = prefs.sshHost.orEmpty()
         sshPort = prefs.sshPort?.takeIf { it > 0 }?.toString().orEmpty()
@@ -383,6 +409,11 @@ fun SettingsScreen(
                 credentialsStore.setGitBranch(gitBranch.trim().ifEmpty { null })
                 credentialsStore.setGitFilePath(gitFilePath.trim().ifEmpty { null })
                 credentialsStore.setGitPrivateKey(gitPrivateKey.trim().ifEmpty { null })
+                credentialsStore.setAppUpdatePrivateKey(appUpdatePrivateKey.trim().ifEmpty { null })
+                credentialsStore.setGitUpdateEnabled(gitUpdateEnabled)
+                credentialsStore.setGitUpdateFileName(gitUpdateFileName.trim().ifEmpty { null })
+                credentialsStore.setAppUpdateRepoUrl(appUpdateRepoUrl.trim().ifEmpty { null })
+                credentialsStore.setAppUpdateBranch(appUpdateBranch.trim().ifEmpty { null })
                 credentialsStore.setSshFingerprintSha256(fingerprint.trim().ifEmpty { null })
 
                 val trimmedSshHost = sshHost.trim().ifEmpty { null }
@@ -490,10 +521,16 @@ fun SettingsScreen(
         val trimmedDefaultSshUser = builderDefaultSshUser.trim()
         val trimmedDefaultGitRepo = builderDefaultGitRepo.trim()
         val trimmedDefaultGitFile = builderDefaultGitFile.trim()
+        val trimmedDefaultAppUpdateFile = builderDefaultAppUpdateFile.trim()
+        val trimmedDefaultAppUpdateRepo = builderDefaultAppUpdateRepo.trim()
+        val trimmedDefaultAppUpdateBranch = builderDefaultAppUpdateBranch.trim()
+        val trimmedDefaultAppUpdateKey = builderDefaultAppUpdateKey.trim()
         val trimmedDefaultSshKey = builderDefaultSshKey.trim()
         val trimmedDefaultGitKey = builderDefaultGitKey.trim()
         val trimmedDefaultSettingsPassword = builderDefaultSettingsPassword.trim()
         val effectiveVersionName = trimmedVersionName.ifBlank { BuildConfig.VERSION_NAME }
+        val generatedUpdateFileName = TemplateAppBuilder.defaultUpdateFilePattern(trimmedName)
+        val effectiveDefaultAppUpdateFile = trimmedDefaultAppUpdateFile.ifBlank { generatedUpdateFileName }
         builderVersionCodeError = null
         val effectiveVersionCode = if (trimmedVersionCode.isBlank()) {
             BuildConfig.VERSION_CODE
@@ -558,6 +595,10 @@ fun SettingsScreen(
         builderDefaultSshUser = trimmedDefaultSshUser
         builderDefaultGitRepo = trimmedDefaultGitRepo
         builderDefaultGitFile = trimmedDefaultGitFile
+        builderDefaultAppUpdateRepo = trimmedDefaultAppUpdateRepo
+        builderDefaultAppUpdateBranch = trimmedDefaultAppUpdateBranch
+        builderDefaultAppUpdateFile = effectiveDefaultAppUpdateFile
+        builderDefaultAppUpdateKey = trimmedDefaultAppUpdateKey
         builderDefaultSshKey = trimmedDefaultSshKey
         builderDefaultGitKey = trimmedDefaultGitKey
         builderDefaultSettingsPassword = trimmedDefaultSettingsPassword
@@ -590,6 +631,10 @@ fun SettingsScreen(
                         defaultSshUser = trimmedDefaultSshUser,
                         defaultGitRepoUrl = trimmedDefaultGitRepo,
                         defaultGitFilePath = trimmedDefaultGitFile,
+                        defaultAppUpdateRepoUrl = trimmedDefaultAppUpdateRepo,
+                        defaultAppUpdateBranch = trimmedDefaultAppUpdateBranch,
+                        defaultAppUpdateFile = effectiveDefaultAppUpdateFile,
+                        defaultAppUpdatePrivateKey = trimmedDefaultAppUpdateKey,
                         defaultSshPrivateKey = trimmedDefaultSshKey,
                         defaultGitPrivateKey = trimmedDefaultGitKey,
                         defaultSettingsPassword = trimmedDefaultSettingsPassword,
@@ -687,6 +732,11 @@ fun SettingsScreen(
                 gitBranch = gitBranch,
                 gitFilePath = gitFilePath,
                 gitPrivateKey = gitPrivateKey,
+                appUpdatePrivateKey = appUpdatePrivateKey,
+                appUpdateRepoUrl = appUpdateRepoUrl,
+                appUpdateBranch = appUpdateBranch,
+                gitUpdateEnabled = gitUpdateEnabled,
+                gitUpdateFileName = gitUpdateFileName,
                 lastEndpoint = lastEndpoint,
                 lastEndpointSource = lastEndpointSource,
                 onBack = {
@@ -700,6 +750,16 @@ fun SettingsScreen(
                 onGitBranchChange = { gitBranch = it },
                 onGitFilePathChange = { gitFilePath = it },
                 onGitKeyChange = { gitPrivateKey = it },
+                onAppUpdateKeyChange = { appUpdatePrivateKey = it },
+                onAppUpdateRepoChange = { appUpdateRepoUrl = it },
+                onAppUpdateBranchChange = { appUpdateBranch = it },
+                onToggleGitUpdate = { gitUpdateEnabled = it },
+                onGitUpdateFileChange = {
+                    gitUpdateFileName = it
+                    if (it.isNotBlank()) {
+                        gitUpdateEnabled = true
+                    }
+                },
                 onSyncNow = onSyncNow,
             )
 
@@ -764,6 +824,7 @@ fun SettingsScreen(
                 hideConnectionMessages = hideConnectionMessages,
                 forceIpv4 = forceIpv4,
                 autoSaveEnabled = autoSaveEnabled,
+                gitUpdateEnabled = gitUpdateEnabled,
                 languageCode = appLanguage,
                 themeColorId = currentThemeColorId,
                 themeModeId = currentThemeModeId,
@@ -800,6 +861,7 @@ fun SettingsScreen(
                     prefs.autoSaveSettings = enabled
                     if (enabled) triggerSave(showMessage = false)
                 },
+                onCheckUpdates = onCheckUpdates,
                 onSettingsPasswordEnabledChange = { enabled ->
                     settingsPasswordEnabled = enabled
                     settingsPasswordError = null
@@ -863,10 +925,14 @@ fun SettingsScreen(
                     defaultHttpHeader = builderDefaultHttpHeader,
                     defaultHttpKey = builderDefaultHttpKey,
                     defaultNtfyTopic = builderDefaultNtfyTopic,
-                    defaultLocalPort = builderDefaultLocalPort,
-                    defaultSshUser = builderDefaultSshUser,
+                defaultLocalPort = builderDefaultLocalPort,
+                defaultSshUser = builderDefaultSshUser,
                     defaultGitRepoUrl = builderDefaultGitRepo,
                     defaultGitFilePath = builderDefaultGitFile,
+                    defaultAppUpdateRepoUrl = builderDefaultAppUpdateRepo,
+                    defaultAppUpdateBranch = builderDefaultAppUpdateBranch,
+                    defaultAppUpdateFile = builderDefaultAppUpdateFile,
+                    defaultAppUpdatePrivateKey = builderDefaultAppUpdateKey,
                     defaultPortError = builderPortError,
                     defaultDirectPortError = builderDirectPortError,
                     defaultLocalPortError = builderLocalPortError,
@@ -906,6 +972,10 @@ fun SettingsScreen(
                     onDefaultSshUserChange = { builderDefaultSshUser = it },
                     onDefaultGitRepoChange = { builderDefaultGitRepo = it },
                     onDefaultGitFileChange = { builderDefaultGitFile = it },
+                    onDefaultAppUpdateRepoChange = { builderDefaultAppUpdateRepo = it },
+                    onDefaultAppUpdateBranchChange = { builderDefaultAppUpdateBranch = it },
+                    onDefaultAppUpdateFileChange = { builderDefaultAppUpdateFile = it },
+                    onDefaultAppUpdateKeyChange = { builderDefaultAppUpdateKey = it },
                     onDefaultSshKeyChange = { builderDefaultSshKey = it },
                     onDefaultGitKeyChange = { builderDefaultGitKey = it },
                     onDefaultSettingsPasswordChange = { builderDefaultSettingsPassword = it },
@@ -1026,6 +1096,11 @@ private fun RemoteUpdatesPage(
     gitBranch: String,
     gitFilePath: String,
     gitPrivateKey: String,
+    appUpdatePrivateKey: String,
+    appUpdateRepoUrl: String,
+    appUpdateBranch: String,
+    gitUpdateEnabled: Boolean,
+    gitUpdateFileName: String,
     lastEndpoint: String?,
     lastEndpointSource: String?,
     onBack: () -> Unit,
@@ -1036,11 +1111,19 @@ private fun RemoteUpdatesPage(
     onGitBranchChange: (String) -> Unit,
     onGitFilePathChange: (String) -> Unit,
     onGitKeyChange: (String) -> Unit,
+    onAppUpdateKeyChange: (String) -> Unit,
+    onAppUpdateRepoChange: (String) -> Unit,
+    onAppUpdateBranchChange: (String) -> Unit,
+    onToggleGitUpdate: (Boolean) -> Unit,
+    onGitUpdateFileChange: (String) -> Unit,
     onSyncNow: () -> Unit,
 ) {
     var ntfyExpanded by rememberSaveable { mutableStateOf(true) }
     var remoteFileExpanded by rememberSaveable { mutableStateOf(false) }
     var gitExpanded by rememberSaveable { mutableStateOf(true) }
+    var gitKeyExpanded by rememberSaveable { mutableStateOf(false) }
+    var appUpdateExpanded by rememberSaveable { mutableStateOf(false) }
+    var appUpdateKeyExpanded by rememberSaveable { mutableStateOf(false) }
 
     val endpointText = lastEndpoint?.let { parseTcpEndpoint(it) }?.let { (host, port) ->
         val source = lastEndpointSource?.let { runCatching { ProxyEndpointSource.valueOf(it) }.getOrNull() }
@@ -1153,17 +1236,137 @@ private fun RemoteUpdatesPage(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 120.dp),
-                value = gitPrivateKey,
-                onValueChange = onGitKeyChange,
-                label = { Text(stringResource(id = R.string.settings_git_key_label)) },
-                placeholder = { Text(stringResource(id = R.string.settings_git_key_placeholder)) },
-                singleLine = false,
+                    .clickable { gitKeyExpanded = !gitKeyExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_git_key_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (gitKeyExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null
+                )
+            }
+            AnimatedVisibility(visible = gitKeyExpanded) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp),
+                        value = gitPrivateKey,
+                        onValueChange = onGitKeyChange,
+                        label = { Text(stringResource(id = R.string.settings_git_key_label)) },
+                        placeholder = { Text(stringResource(id = R.string.settings_git_key_placeholder)) },
+                        singleLine = false,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    )
+                }
+            }
+        }
+
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.settings_app_update_section_title),
+            description = stringResource(id = R.string.settings_app_update_section_description),
+            expanded = appUpdateExpanded,
+            onToggle = { appUpdateExpanded = !appUpdateExpanded }
+        ) {
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = appUpdateRepoUrl,
+                onValueChange = onAppUpdateRepoChange,
+                label = { Text(stringResource(id = R.string.settings_app_update_repo_label)) },
+                placeholder = { Text(stringResource(id = R.string.settings_app_update_repo_placeholder)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = appUpdateBranch,
+                onValueChange = onAppUpdateBranchChange,
+                label = { Text(stringResource(id = R.string.settings_app_update_branch_label)) },
+                placeholder = { Text(stringResource(id = R.string.settings_app_update_branch_placeholder)) },
+                singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleGitUpdate(!gitUpdateEnabled) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = gitUpdateEnabled,
+                    onCheckedChange = onToggleGitUpdate
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(id = R.string.settings_git_update_checkbox),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            AnimatedVisibility(visible = gitUpdateEnabled) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = gitUpdateFileName,
+                        onValueChange = onGitUpdateFileChange,
+                        label = { Text(stringResource(id = R.string.settings_git_update_file_label)) },
+                        placeholder = {
+                            Text(stringResource(id = R.string.settings_git_update_file_placeholder))
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(id = R.string.settings_app_update_key_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { appUpdateKeyExpanded = !appUpdateKeyExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(id = R.string.settings_app_update_key_label),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (appUpdateKeyExpanded) Icons.Default.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null
+                )
+            }
+            AnimatedVisibility(visible = appUpdateKeyExpanded) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp),
+                        value = appUpdatePrivateKey,
+                        onValueChange = onAppUpdateKeyChange,
+                        label = { Text(stringResource(id = R.string.settings_app_update_key_label)) },
+                        placeholder = { Text(stringResource(id = R.string.settings_app_update_key_placeholder)) },
+                        singleLine = false,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                    )
+                }
+            }
         }
 
         TextButton(
@@ -1562,6 +1765,7 @@ private fun PreferencesPage(
     hideConnectionMessages: Boolean,
     forceIpv4: Boolean,
     autoSaveEnabled: Boolean,
+    gitUpdateEnabled: Boolean,
     languageCode: String,
     themeColorId: String,
     themeModeId: String,
@@ -1576,6 +1780,7 @@ private fun PreferencesPage(
     onHideConnectionMessagesChange: (Boolean) -> Unit,
     onForceIpv4Change: (Boolean) -> Unit,
     onAutoSaveChange: (Boolean) -> Unit,
+    onCheckUpdates: () -> Unit,
     onSettingsPasswordEnabledChange: (Boolean) -> Unit,
     onSettingsPasswordInputChange: (String) -> Unit,
     onSettingsPasswordConfirmChange: (String) -> Unit,
@@ -1679,6 +1884,14 @@ private fun PreferencesPage(
                     checked = forceIpv4,
                     onCheckedChange = onForceIpv4Change
                 )
+                if (gitUpdateEnabled) {
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onCheckUpdates
+                    ) {
+                        Text(text = stringResource(id = R.string.git_update_check_now))
+                    }
+                }
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = onTestReconnect
@@ -1902,6 +2115,10 @@ private fun AppBuilderPage(
     defaultSshUser: String,
     defaultGitRepoUrl: String,
     defaultGitFilePath: String,
+    defaultAppUpdateRepoUrl: String,
+    defaultAppUpdateBranch: String,
+    defaultAppUpdateFile: String,
+    defaultAppUpdatePrivateKey: String,
     defaultPortError: String?,
     defaultDirectPortError: String?,
     defaultLocalPortError: String?,
@@ -1925,6 +2142,10 @@ private fun AppBuilderPage(
     onDefaultSshUserChange: (String) -> Unit,
     onDefaultGitRepoChange: (String) -> Unit,
     onDefaultGitFileChange: (String) -> Unit,
+    onDefaultAppUpdateRepoChange: (String) -> Unit,
+    onDefaultAppUpdateBranchChange: (String) -> Unit,
+    onDefaultAppUpdateFileChange: (String) -> Unit,
+    onDefaultAppUpdateKeyChange: (String) -> Unit,
     onDefaultSshKeyChange: (String) -> Unit,
     onDefaultGitKeyChange: (String) -> Unit,
     onDefaultSettingsPasswordChange: (String) -> Unit,
@@ -1940,6 +2161,18 @@ private fun AppBuilderPage(
     onBuild: () -> Unit,
     onInstall: (() -> Unit)?,
 ) {
+    var detailsExpanded by rememberSaveable { mutableStateOf(true) }
+    var signingExpanded by rememberSaveable { mutableStateOf(false) }
+    var tunnelDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var directDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var ntfyDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var httpDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var localDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var sshDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var gitDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var updateDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+    var securityDefaultsExpanded by rememberSaveable { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1952,96 +2185,107 @@ private fun AppBuilderPage(
             title = stringResource(id = R.string.app_builder_title),
             onBack = onBack
         )
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = appName,
-            onValueChange = onAppNameChange,
-            label = { Text(text = stringResource(id = R.string.app_builder_name_label)) },
-            singleLine = true
-        )
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = packageName,
-            onValueChange = onPackageChange,
-            label = { Text(text = stringResource(id = R.string.app_builder_package_label)) },
-            singleLine = true,
-            isError = packageName.isNotBlank() && !packageValid,
-            supportingText = {
-                if (packageName.isNotBlank() && !packageValid) {
-                    Text(
-                        text = stringResource(id = R.string.app_builder_invalid_package),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        )
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = versionName,
-            onValueChange = onVersionNameChange,
-            label = { Text(text = stringResource(id = R.string.app_builder_version_name_label)) },
-            placeholder = { Text(text = stringResource(id = R.string.app_builder_version_name_placeholder)) },
-            singleLine = true,
-            enabled = !isBuilding
-        )
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = versionCode,
-            onValueChange = onVersionCodeChange,
-            label = { Text(text = stringResource(id = R.string.app_builder_version_code_label)) },
-            placeholder = { Text(text = stringResource(id = R.string.app_builder_version_code_placeholder)) },
-            singleLine = true,
-            enabled = !isBuilding,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            isError = versionCodeError != null,
-            supportingText = {
-                if (versionCodeError != null) {
-                    Text(
-                        text = versionCodeError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        )
-        OutlinedButton(
-            onClick = onPickIcon,
-            enabled = !isBuilding
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_section_details_title),
+            description = stringResource(id = R.string.app_builder_section_details_description),
+            expanded = detailsExpanded,
+            onToggle = { detailsExpanded = !detailsExpanded }
         ) {
-            Text(text = stringResource(id = R.string.app_builder_select_icon))
-        }
-        Text(
-            text = selectedIconName ?: stringResource(id = R.string.app_builder_pick_placeholder),
-            style = MaterialTheme.typography.bodySmall,
-            color = if (selectedIconName != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(id = R.string.app_builder_template_bundle_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = stringResource(id = R.string.app_builder_template_bundle_description),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = includeBaseTemplate,
-                onCheckedChange = onIncludeBaseTemplateChange,
-                enabled = !isBuilding,
-                colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = appName,
+                onValueChange = onAppNameChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_name_label)) },
+                singleLine = true
             )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = packageName,
+                onValueChange = onPackageChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_package_label)) },
+                singleLine = true,
+                isError = packageName.isNotBlank() && !packageValid,
+                supportingText = {
+                    if (packageName.isNotBlank() && !packageValid) {
+                        Text(
+                            text = stringResource(id = R.string.app_builder_invalid_package),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = versionName,
+                onValueChange = onVersionNameChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_version_name_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_version_name_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = versionCode,
+                onValueChange = onVersionCodeChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_version_code_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_version_code_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = versionCodeError != null,
+                supportingText = {
+                    if (versionCodeError != null) {
+                        Text(
+                            text = versionCodeError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            )
+            OutlinedButton(
+                onClick = onPickIcon,
+                enabled = !isBuilding
+            ) {
+                Text(text = stringResource(id = R.string.app_builder_select_icon))
+            }
+            Text(
+                text = selectedIconName ?: stringResource(id = R.string.app_builder_pick_placeholder),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (selectedIconName != null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.outline
+                }
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.app_builder_template_bundle_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = stringResource(id = R.string.app_builder_template_bundle_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = includeBaseTemplate,
+                    onCheckedChange = onIncludeBaseTemplateChange,
+                    enabled = !isBuilding,
+                    colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                )
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -2053,6 +2297,13 @@ private fun AppBuilderPage(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_tunnel_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_tunnel_description),
+            expanded = tunnelDefaultsExpanded,
+            onToggle = { tunnelDefaultsExpanded = !tunnelDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultRemoteInternalHost,
@@ -2083,6 +2334,13 @@ private fun AppBuilderPage(
                     }
                 }
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_direct_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_direct_description),
+            expanded = directDefaultsExpanded,
+            onToggle = { directDefaultsExpanded = !directDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultDirectHost,
@@ -2113,6 +2371,13 @@ private fun AppBuilderPage(
                     }
                 }
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_ntfy_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_ntfy_description),
+            expanded = ntfyDefaultsExpanded,
+            onToggle = { ntfyDefaultsExpanded = !ntfyDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultNtfyTopic,
@@ -2123,6 +2388,13 @@ private fun AppBuilderPage(
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_http_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_http_description),
+            expanded = httpDefaultsExpanded,
+            onToggle = { httpDefaultsExpanded = !httpDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultHttpAddress,
@@ -2153,6 +2425,13 @@ private fun AppBuilderPage(
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_local_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_local_description),
+            expanded = localDefaultsExpanded,
+            onToggle = { localDefaultsExpanded = !localDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultLocalPort,
@@ -2173,6 +2452,13 @@ private fun AppBuilderPage(
                     }
                 }
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_ssh_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_ssh_description),
+            expanded = sshDefaultsExpanded,
+            onToggle = { sshDefaultsExpanded = !sshDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultSshUser,
@@ -2194,6 +2480,13 @@ private fun AppBuilderPage(
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_git_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_git_description),
+            expanded = gitDefaultsExpanded,
+            onToggle = { gitDefaultsExpanded = !gitDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultGitRepoUrl,
@@ -2225,6 +2518,61 @@ private fun AppBuilderPage(
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
             )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_updates_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_updates_description),
+            expanded = updateDefaultsExpanded,
+            onToggle = { updateDefaultsExpanded = !updateDefaultsExpanded }
+        ) {
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultAppUpdateRepoUrl,
+                onValueChange = onDefaultAppUpdateRepoChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_app_update_repo_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_app_update_repo_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultAppUpdateBranch,
+                onValueChange = onDefaultAppUpdateBranchChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_app_update_branch_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_app_update_branch_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
+            OutlinedTextField(
+                modifier = Modifier.fillMaxWidth(),
+                value = defaultAppUpdateFile,
+                onValueChange = onDefaultAppUpdateFileChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_app_update_file_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_app_update_file_placeholder)) },
+                singleLine = true,
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
+            OutlinedTextField(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp),
+                value = defaultAppUpdatePrivateKey,
+                onValueChange = onDefaultAppUpdateKeyChange,
+                label = { Text(text = stringResource(id = R.string.app_builder_default_app_update_key_label)) },
+                placeholder = { Text(text = stringResource(id = R.string.app_builder_default_app_update_key_placeholder)) },
+                enabled = !isBuilding,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+            )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_defaults_section_security_title),
+            description = stringResource(id = R.string.app_builder_defaults_section_security_description),
+            expanded = securityDefaultsExpanded,
+            onToggle = { securityDefaultsExpanded = !securityDefaultsExpanded }
+        ) {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
                 value = defaultSettingsPassword,
@@ -2235,45 +2583,52 @@ private fun AppBuilderPage(
                 enabled = !isBuilding,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
-            Text(
-                text = stringResource(id = R.string.app_builder_defaults_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
-        PreferenceSwitchRow(
-            title = stringResource(id = R.string.app_builder_custom_signing_title),
-            checked = useCustomSigning,
-            onCheckedChange = onToggleCustomSigning
+        Text(
+            text = stringResource(id = R.string.app_builder_defaults_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (useCustomSigning) {
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = signingAlias,
-                onValueChange = onSigningAliasChange,
-                label = { Text(text = stringResource(id = R.string.app_builder_alias_label)) },
-                singleLine = true
+        ExpandableSettingsSection(
+            title = stringResource(id = R.string.app_builder_custom_signing_title),
+            description = stringResource(id = R.string.app_builder_custom_signing_description),
+            expanded = signingExpanded,
+            onToggle = { signingExpanded = !signingExpanded }
+        ) {
+            PreferenceSwitchRow(
+                title = stringResource(id = R.string.app_builder_custom_signing_title),
+                checked = useCustomSigning,
+                onCheckedChange = onToggleCustomSigning
             )
-            OutlinedTextField(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp),
-                value = privateKeyPem,
-                onValueChange = onPrivateKeyChange,
-                label = { Text(text = stringResource(id = R.string.app_builder_private_key_label)) },
-                placeholder = { Text(text = stringResource(id = R.string.app_builder_private_key_placeholder)) },
-                maxLines = 8
-            )
-            OutlinedTextField(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp),
-                value = certificatePem,
-                onValueChange = onCertificateChange,
-                label = { Text(text = stringResource(id = R.string.app_builder_certificate_label)) },
-                placeholder = { Text(text = stringResource(id = R.string.app_builder_certificate_placeholder)) },
-                maxLines = 8
-            )
+            if (useCustomSigning) {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = signingAlias,
+                    onValueChange = onSigningAliasChange,
+                    label = { Text(text = stringResource(id = R.string.app_builder_alias_label)) },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    value = privateKeyPem,
+                    onValueChange = onPrivateKeyChange,
+                    label = { Text(text = stringResource(id = R.string.app_builder_private_key_label)) },
+                    placeholder = { Text(text = stringResource(id = R.string.app_builder_private_key_placeholder)) },
+                    maxLines = 8
+                )
+                OutlinedTextField(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    value = certificatePem,
+                    onValueChange = onCertificateChange,
+                    label = { Text(text = stringResource(id = R.string.app_builder_certificate_label)) },
+                    placeholder = { Text(text = stringResource(id = R.string.app_builder_certificate_placeholder)) },
+                    maxLines = 8
+                )
+            }
         }
         statusMessage?.let {
             Text(

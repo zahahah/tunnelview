@@ -7,8 +7,8 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 - **Always-on SSH forwarding** – `TunnelService` + `TunnelManager` keep a local port open (default `8090`) and reconnect with smart backoff, IPv4 forcing, host-key pinning, and stateful notifications.
 - **Dynamic endpoints** – The app listens to `ntfy.sh` topics over SSE/WebSockets (`NtfySseService`) and periodically syncs a fallback host:port from HTTP or private Git (`EndpointSyncWorker` + `GitEndpointFetcher`), so technicians can rotate tunnels remotely.
 - **Resilient browsing experience** – `MainCoordinator` toggles between direct connection, HTTP endpoints, and the tunnel, surfaces the active target in the toolbar/snackbar, probes HTTP paths every 10 s while on SSH so it can promote faster routes automatically, caches full HTML snapshots for offline mode, keeps uploads/downloads working, and exposes quick troubleshooting actions.
-- **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs, with defaults (e.g., “Hide connection messages”) now seedable via `.env` or `app_defaults.json`.
-- **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings. Pass `-PdisableAppBuilder` to Gradle if you need to exclude this feature (and the bundled `base_template_apk.tar`) from a specific build.
+- **Material 3 settings & diagnostics** – Compose screens (`SettingsScreen`, `ConnectionDiagnosticsActivity`) expose every knob: ntfy topics, SSH keys/passwords, host fingerprints, force IPv4, localized UI (English/PT-BR), and real-time connection logs, with defaults (e.g., “Hide connection messages”) now seedable via `.env` or `app_defaults.json`. Diagnostics also surface Git update check status/timestamp for troubleshooting.
+- **Embedded white‑label builder** – `TemplateAppBuilder` repackages a base APK, swaps icons/manifest ids/default secrets, and signs the result (either with an auto-generated key or a custom PEM pair) so each branch can get its own branded tunnel app directly from Settings. Pass `-PdisableAppBuilder` to Gradle if you need to exclude this feature (and the bundled `base_template_apk.tar`) from a specific build. Git-based app updates can be enabled via `DEFAULT_GIT_UPDATE_FILE` (supports `*` wildcard) with in-app/manual “Check for updates” prompts.
 
 ## System Overview
 
@@ -62,6 +62,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 | `DEFAULT_LOCAL_PORT`                                            | Local loopback port exposed on the device (default `8090`).                                                                |
 | `DEFAULT_SSH_USER`                                              | Default Linux user for the bastion.                                                                                        |
 | `DEFAULT_GIT_REPO_URL` / `DEFAULT_GIT_FILE_PATH`                | Optional Git repo + file that holds the latest endpoint payload.                                                           |
+| `DEFAULT_GIT_UPDATE_FILE`                                       | Optional APK filename (supports `*` wildcard) in the same Git repo used to surface in-app update prompts/checks.           |
 | `DEFAULT_HIDE_CONNECTION_MESSAGES`                              | `true`/`yes`/`1` keeps connection status snackbars/log toasts hidden by default until the user opts back in.               |
 
 3. **Provide PEM files (never commit production keys)**
@@ -153,6 +154,7 @@ These `.env` entries (and matching `BuildConfig` fields) seed the defaults that 
 | `DEFAULT_SSH_FINGERPRINT` | SHA-256 fingerprint to pin the SSH host key when strict mode is enabled. (Currently used only as documentation for configuring Settings.) | Fingerprint pinning remains unset; the user can add it from Settings. |
 | `DEFAULT_GIT_REPO_URL` | Git remote (e.g., `git@…`) used for fallback endpoint JSON. | Git sync starts disabled. |
 | `DEFAULT_GIT_FILE_PATH` | Path inside the Git repo where the endpoint JSON lives. | Git sync starts disabled. |
+| `DEFAULT_GIT_UPDATE_FILE` | APK filename (relative to the Git repo root, `*` wildcard allowed) used for the optional in-app update prompt and “Check for updates”. | Update checks stay disabled until enabled in Settings. |
 | `DEFAULT_HTTP_ADDRESS` | HTTP(S) endpoint returning fallback host/port data. | HTTP fallback stays disabled. |
 | `DEFAULT_HTTP_HEADER` | Optional header (for auth tokens, etc.) sent with HTTP fallback requests. | No extra headers are sent. |
 | `DEFAULT_HTTP_KEY` | Optional API key stored alongside the HTTP fallback configuration. | Key field remains blank. |

@@ -55,8 +55,8 @@ android {
         applicationId "com.zahah.tunnelview"
         minSdk 26
         targetSdk 35
-        versionCode 16
-        versionName "1.6.0"
+        versionCode 20
+        versionName "2.0.0"
         vectorDrawables.useSupportLibrary = true
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_HOST", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_HOST"))
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_PORT", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_PORT"))
@@ -70,8 +70,13 @@ android {
         buildConfigField "String", "DEFAULT_SSH_USER", quoteString(envValue("DEFAULT_SSH_USER"))
         buildConfigField "String", "DEFAULT_GIT_REPO_URL", quoteString(envValue("DEFAULT_GIT_REPO_URL"))
         buildConfigField "String", "DEFAULT_GIT_FILE_PATH", quoteString(envValue("DEFAULT_GIT_FILE_PATH"))
+        buildConfigField "String", "DEFAULT_GIT_UPDATE_FILE", quoteString(envValue("DEFAULT_GIT_UPDATE_FILE"))
+        buildConfigField "String", "DEFAULT_APP_UPDATE_REPO_URL", quoteString(envValue("DEFAULT_APP_UPDATE_REPO_URL"))
+        buildConfigField "String", "DEFAULT_APP_UPDATE_BRANCH", quoteString(envValue("DEFAULT_APP_UPDATE_BRANCH"))
+        buildConfigField "String", "DEFAULT_APP_UPDATE_FILE", quoteString(envValue("DEFAULT_APP_UPDATE_FILE"))
         buildConfigField "String", "DEFAULT_SSH_PRIVATE_KEY", envFileContent("DEFAULT_SSH_PRIVATE_KEY_PATH")
         buildConfigField "String", "DEFAULT_GIT_PRIVATE_KEY", envFileContent("DEFAULT_GIT_PRIVATE_KEY_PATH")
+        buildConfigField "String", "DEFAULT_APP_UPDATE_PRIVATE_KEY", envFileContent("DEFAULT_APP_UPDATE_PRIVATE_KEY_PATH")
         buildConfigField "String", "DEFAULT_SETTINGS_PASSWORD", quoteString(envValue("DEFAULT_SETTINGS_PASSWORD"))
         buildConfigField "boolean", "APP_BUILDER_ENABLED", includeBaseTemplate ? "true" : "false"
         buildConfigField "boolean", "DEFAULT_HIDE_CONNECTION_MESSAGES", envBoolean("DEFAULT_HIDE_CONNECTION_MESSAGES")

@@ -20,6 +20,11 @@ data class AppDefaults(
     val sshUser: String,
     val gitRepoUrl: String,
     val gitFilePath: String,
+    val gitUpdateFileName: String,
+    val appUpdateRepoUrl: String,
+    val appUpdateBranch: String,
+    val appUpdateFileName: String,
+    val appUpdatePrivateKey: String,
     val sshPrivateKey: String,
     val gitPrivateKey: String,
     val settingsPassword: String,
@@ -67,6 +72,16 @@ object AppDefaultsProvider {
                         sshUser = json.optString("sshUser", base.sshUser).ifBlank { base.sshUser },
                         gitRepoUrl = json.optString("gitRepoUrl", base.gitRepoUrl).ifBlank { base.gitRepoUrl },
                         gitFilePath = json.optString("gitFilePath", base.gitFilePath).ifBlank { base.gitFilePath },
+                        gitUpdateFileName = json.optString("gitUpdateFileName", base.gitUpdateFileName)
+                            .ifBlank { base.gitUpdateFileName },
+                        appUpdateRepoUrl = json.optString("appUpdateRepoUrl", base.appUpdateRepoUrl)
+                            .ifBlank { base.appUpdateRepoUrl },
+                        appUpdateBranch = json.optString("appUpdateBranch", base.appUpdateBranch)
+                            .ifBlank { base.appUpdateBranch },
+                        appUpdateFileName = json.optString("appUpdateFileName", base.appUpdateFileName)
+                            .ifBlank { base.appUpdateFileName },
+                        appUpdatePrivateKey = json.optString("appUpdatePrivateKey", base.appUpdatePrivateKey)
+                            .ifBlank { base.appUpdatePrivateKey },
                         sshPrivateKey = json.optString("sshPrivateKey", base.sshPrivateKey).ifBlank { base.sshPrivateKey },
                         gitPrivateKey = json.optString("gitPrivateKey", base.gitPrivateKey).ifBlank { base.gitPrivateKey },
                         settingsPassword = json.optString("settingsPassword", base.settingsPassword)
@@ -84,6 +99,9 @@ object AppDefaultsProvider {
         val defaultLocalPort = BuildConfig.DEFAULT_LOCAL_PORT.orEmpty().ifBlank { "8090" }
         val defaultHttpAddress = BuildConfig.DEFAULT_HTTP_ADDRESS.orEmpty()
         val defaultNtfyTopic = BuildConfig.DEFAULT_NTFY.orEmpty()
+        val defaultGitUpdateFile = BuildConfig.DEFAULT_APP_UPDATE_FILE.orEmpty()
+        val defaultGitRepo = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty()
+        val defaultAppUpdateKey = decodeMultiline(BuildConfig.DEFAULT_APP_UPDATE_PRIVATE_KEY.orEmpty())
         return AppDefaults(
             remoteInternalHost = BuildConfig.DEFAULT_REMOTE_INTERNAL_HOST.orEmpty(),
             remoteInternalPort = BuildConfig.DEFAULT_REMOTE_INTERNAL_PORT.orEmpty(),
@@ -96,8 +114,16 @@ object AppDefaultsProvider {
             ntfyTopic = defaultNtfyTopic,
             httpEnabled = defaultHttpAddress.isNotBlank(),
             sshUser = BuildConfig.DEFAULT_SSH_USER.orEmpty(),
-            gitRepoUrl = BuildConfig.DEFAULT_GIT_REPO_URL.orEmpty(),
+            gitRepoUrl = defaultGitRepo,
             gitFilePath = BuildConfig.DEFAULT_GIT_FILE_PATH.orEmpty(),
+            gitUpdateFileName = defaultGitUpdateFile,
+            appUpdateRepoUrl = BuildConfig.DEFAULT_APP_UPDATE_REPO_URL.orEmpty()
+                .ifBlank { defaultGitRepo },
+            appUpdateBranch = BuildConfig.DEFAULT_APP_UPDATE_BRANCH.orEmpty()
+                .ifBlank { "main" },
+            appUpdateFileName = BuildConfig.DEFAULT_APP_UPDATE_FILE.orEmpty()
+                .ifBlank { defaultGitUpdateFile },
+            appUpdatePrivateKey = defaultAppUpdateKey.ifBlank { decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()) },
             sshPrivateKey = decodeMultiline(BuildConfig.DEFAULT_SSH_PRIVATE_KEY.orEmpty()),
             gitPrivateKey = decodeMultiline(BuildConfig.DEFAULT_GIT_PRIVATE_KEY.orEmpty()),
             settingsPassword = BuildConfig.DEFAULT_SETTINGS_PASSWORD.orEmpty(),
