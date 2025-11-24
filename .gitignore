@@ -1,3 +1,6 @@
+app/src/main/res/raw/id_ed25519
+app/src/main/res/raw/id_ed25519_git
+app/src/main/res/raw/id_ed25519_git_app_updates
 build
 .env
 .vscode
