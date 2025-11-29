@@ -14,7 +14,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 
 | Layer                  | Responsibilities                                                                                                                     | Key files                                                                                                                  |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| UI (WebView + Compose) | Hosts the remote cashier page, exposes menus (Settings, ntfy, Diagnostics), handles file pickers, offline banners, and localization. | `MainActivity`, `ui/main/MainCoordinator.kt`, `ui/settings/SettingsScreen.kt`, `ui/debug/ConnectionDiagnosticsActivity.kt` |
+| UI (WebView + Compose) | Hosts the remote web page, exposes menus (Settings, ntfy, Diagnostics), handles file pickers, offline banners, and localization. | `MainActivity`, `ui/main/MainCoordinator.kt`, `ui/settings/SettingsScreen.kt`, `ui/debug/ConnectionDiagnosticsActivity.kt` |
 | Connectivity & tunnel  | Observes network, manages SSH lifecycle, renders notifications, and logs connection events.                                          | `TunnelService.kt`, `ssh/SshClient.kt`, `ssh/TunnelManager.kt`, `logging/ConnLogger.kt`, `network/ConnectivityObserver.kt` |
 | Endpoint orchestration | Decides which `tcp://host:port` to use (manual, ntfy, HTTP fallback, Git repo) and keeps it synced in `ProxyRepository`.             | `data/ProxyRepository.kt`, `network/NtfySubscriber.kt`, `work/EndpointSyncWorker.kt`, `network/GitEndpointFetcher.kt`      |
 | Background services    | Foreground services for the tunnel and ntfy SSE plus WorkManager jobs for fallbacks.                                                 | `TunnelService.kt`, `NtfySseService.kt`, `EndpointSyncWorker.kt`                                                           |
@@ -85,7 +85,7 @@ TunnelView is a SSH tunneling Webview Android app to access websites safely in a
 
 - `MainCoordinator` owns the single WebView, toolbar, offline banner, and floating "offline info" action. It applies the hardened defaults from `WebViewConfigurator`.
 - Each navigation cycle tries a **direct connection URL → HTTP endpoint (if enabled) → SSH tunnel (`http://127.0.0.1:<localPort>`)**. When all paths fail, the last good HTML snapshot stored under `files/offline-cache/` is displayed and users can force-refresh or open Settings.
-- File uploads/downloads, geolocation prompts, and notification permission requests are delegated through `ActivityResultContracts`, so most modern cashier pages behave like Chrome Custom Tabs.
+- File uploads/downloads, geolocation prompts, and notification permission requests are delegated through `ActivityResultContracts`, so most modern web pages behave like Chrome Custom Tabs.
 
 ### SSH Tunnel Lifecycle
 
