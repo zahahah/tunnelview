@@ -2043,11 +2043,16 @@ class MainCoordinator(
                     }
                 }
 
-                val tunnelAvailable = isTargetReachable(LoadTarget.TUNNEL, silent = true)
-                if (!tunnelAvailable) {
-                    EndpointSyncWorker.enqueueImmediate(activity.applicationContext)
-                    startConnectionLoop(force = true)
-                    return@launch
+                val shouldProbeTunnel = currentTarget == LoadTarget.TUNNEL ||
+                    showingCachedSnapshot ||
+                    (!directConfigured && !httpConfigured)
+                if (shouldProbeTunnel) {
+                    val tunnelAvailable = isTargetReachable(LoadTarget.TUNNEL, silent = true)
+                    if (!tunnelAvailable) {
+                        EndpointSyncWorker.enqueueImmediate(activity.applicationContext)
+                        startConnectionLoop(force = true)
+                        return@launch
+                    }
                 }
             }
         }
