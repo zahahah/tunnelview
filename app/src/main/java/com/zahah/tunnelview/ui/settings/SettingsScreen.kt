@@ -161,6 +161,7 @@ fun SettingsScreen(
     var httpHeader by rememberSaveable { mutableStateOf("") }
     var httpKey by rememberSaveable { mutableStateOf("") }
 
+    var allowExternalApps by rememberSaveable { mutableStateOf(prefs.allowExternalApps) }
     var cacheLastPage by rememberSaveable { mutableStateOf(false) }
     var persistentNotification by rememberSaveable { mutableStateOf(false) }
     var connectionDebug by rememberSaveable { mutableStateOf(false) }
@@ -324,6 +325,7 @@ fun SettingsScreen(
             else -> ""
         }
 
+        allowExternalApps = prefs.allowExternalApps
         cacheLastPage = prefs.cacheLastPage
         persistentNotification = prefs.persistentNotificationEnabled
         connectionDebug = prefs.connectionDebugLoggingEnabled
@@ -472,6 +474,7 @@ fun SettingsScreen(
                 prefs.directConnectionEnabled = directEnabled && hasEndpoint
                 prefs.useManualEndpoint = true
 
+                prefs.allowExternalApps = allowExternalApps
                 prefs.cacheLastPage = cacheLastPage
                 if (!cacheLastPage) {
                     prefs.cachedHtml = null
@@ -819,6 +822,11 @@ fun SettingsScreen(
 
             SettingsPage.PREFERENCES -> PreferencesPage(
                 modifier = baseModifier,
+                allowExternalApps = allowExternalApps,
+                onAllowExternalAppsChange = {
+                    allowExternalApps = it
+                    if (autoSaveEnabled) triggerSave(showMessage = false)
+                },
                 cacheLastPage = cacheLastPage,
                 persistentNotification = persistentNotification,
                 connectionDebug = connectionDebug,
@@ -1760,6 +1768,8 @@ private fun NetworkSettingsPage(
 @Composable
 private fun PreferencesPage(
     modifier: Modifier,
+    allowExternalApps: Boolean,
+    onAllowExternalAppsChange: (Boolean) -> Unit,
     cacheLastPage: Boolean,
     persistentNotification: Boolean,
     connectionDebug: Boolean,
@@ -1860,6 +1870,12 @@ private fun PreferencesPage(
                     onPasswordChange = onSettingsPasswordInputChange,
                     onConfirmPasswordChange = onSettingsPasswordConfirmChange
                 )
+                PreferenceSwitchRow(
+                    title = stringResource(id = R.string.settings_external_apps_label),
+                    checked = allowExternalApps,
+                    onCheckedChange = onAllowExternalAppsChange
+                )
+                Text(text = stringResource(R.string.settings_external_apps_description))
                 PreferenceSwitchRow(
                     title = stringResource(id = R.string.label_cache_last_page),
                     checked = cacheLastPage,

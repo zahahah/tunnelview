@@ -73,6 +73,7 @@ import com.zahah.tunnelview.logging.ConnEvent
 import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
 import com.zahah.tunnelview.network.HttpClient
+import com.zahah.tunnelview.webview.ExternalLinkPolicy
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
 import com.zahah.tunnelview.update.GitUpdateChecker
@@ -709,6 +710,45 @@ class MainCoordinator(
         }
     }
 
+    private fun handleExternalLink(uri: Uri, mainFrame: Boolean, userGesture: Boolean): Boolean {
+        if (!ExternalLinkPolicy.isExternal(uri.toString())) return false
+        // Never send custom schemes to WebView, even when external apps are disabled.
+        if (!mainFrame) return true
+        if (!prefs.allowExternalApps) {
+            Toast.makeText(activity, R.string.external_apps_disabled, Toast.LENGTH_LONG).show()
+            return true
+        }
+        val launch = {
+            try {
+                val parsed = if (uri.scheme.equals("intent", true)) {
+                    Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
+                } else null
+                val target = parsed?.data ?: if (parsed == null) uri else null
+                if (target == null || !ExternalLinkPolicy.isSafeIntentTarget(target.toString())) {
+                    Toast.makeText(activity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show()
+                } else {
+                    // Construct a new browsable VIEW intent: discard components, selectors,
+                    // extras and permission flags supplied by untrusted web content.
+                    val intent = Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
+                    parsed?.`package`?.let { intent.setPackage(it) }
+                    activity.startActivity(intent)
+                }
+            } catch (_: Exception) {
+                // Do not load a wallet download/fallback URL into the current dapp.
+                Toast.makeText(activity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show()
+            }
+        }
+        if (userGesture) launch() else {
+            androidx.appcompat.app.AlertDialog.Builder(activity)
+                .setTitle(R.string.external_app_confirm_title)
+                .setMessage(R.string.external_app_confirm_message)
+                .setPositiveButton(R.string.external_app_open) { _, _ -> launch() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+        return true
+    }
+
     private fun configureWebView() {
         webView.addJavascriptInterface(offlineBridge, "AndroidOffline")
         progress.isClickable = true
@@ -760,13 +800,15 @@ class MainCoordinator(
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (handleExternalLink(request.url, request.isForMainFrame, request.hasGesture())) return true
                 val mapped = toLocalLoopbackIfNeeded(request.url)
                 return when {
                     currentTarget == LoadTarget.TUNNEL && mapped != request.url -> {
                         view.loadUrl(mapped.toString())
                         true
                     }
-                    currentTarget == LoadTarget.HTTP -> {
+                    currentTarget == LoadTarget.HTTP &&
+                        ExternalLinkPolicy.sameOrigin(request.url.toString(), httpBaseUrl()) -> {
                         loadUrlForTarget(request.url.toString(), LoadTarget.HTTP)
                         true
                     }
@@ -946,6 +988,8 @@ class MainCoordinator(
                     }
                     LoadTarget.HTTP -> {
                         val url = request.url.toString()
+                        // Let WebView preserve redirects, methods and cookies for third-party sites.
+                        if (!ExternalLinkPolicy.sameOrigin(url, httpBaseUrl())) return null
                         if (isMain) {
                             logConnection(android.util.Log.DEBUG, "WEBREQ") { "MAIN HTTP $method $url" }
                         } else if (prefs.connectionDebugLoggingEnabled) {
@@ -2392,7 +2436,7 @@ class MainCoordinator(
     }
 
     private fun loadUrlForTarget(url: String, target: LoadTarget) {
-        if (target == LoadTarget.HTTP) {
+        if (target == LoadTarget.HTTP && ExternalLinkPolicy.sameOrigin(url, httpBaseUrl())) {
             val headers = httpRequestHeaders()
             if (headers != null) {
                 webView.loadUrl(url, headers)
@@ -3178,6 +3222,8 @@ class MainCoordinator(
     }
 
     private fun injectNetworkShim() {
+        if (currentTarget != LoadTarget.HTTP ||
+            !ExternalLinkPolicy.sameOrigin(webView.url.orEmpty(), httpBaseUrl())) return
         val header = credentialsStore.httpHeaderConfig() ?: return
         val name = header.name.trim()
         val value = header.value.trim()
@@ -3189,6 +3235,11 @@ class MainCoordinator(
                 if (!HEADER_NAME || !HEADER_VALUE) { return; }
                 if (window.__tunnelviewHeaderShim === HEADER_NAME + HEADER_VALUE) { return; }
                 window.__tunnelviewHeaderShim = HEADER_NAME + HEADER_VALUE;
+                const AUTH_ORIGIN = new URL(${jsStringLiteral(httpBaseUrl())}).origin;
+                const needsAuth = (url) => {
+                    try { return new URL(url, window.location.href).origin === AUTH_ORIGIN; }
+                    catch (_) { return false; }
+                };
                 const mergeHeaders = (existing) => {
                     const headers = new Headers(existing || {});
                     headers.set(HEADER_NAME, HEADER_VALUE);
@@ -3198,6 +3249,9 @@ class MainCoordinator(
                 if (typeof window.fetch === 'function') {
                     const origFetch = window.fetch;
                     window.fetch = function(input, init) {
+                        if (!needsAuth(input instanceof Request ? input.url : input)) {
+                            return origFetch.call(this, input, init);
+                        }
                         const nextInit = withCredentials(init);
                         if (input instanceof Request) {
                             nextInit.headers = mergeHeaders(nextInit.headers || input.headers);
@@ -3211,18 +3265,19 @@ class MainCoordinator(
                     const proto = XMLHttpRequest.prototype;
                     const origOpen = proto.open;
                     proto.open = function() {
+                        this.__tvNeedsAuth = needsAuth(arguments[1]);
                         return origOpen.apply(this, arguments);
                     };
                     const origSend = proto.send;
                     proto.send = function(body) {
-                        try { this.setRequestHeader(HEADER_NAME, HEADER_VALUE); } catch (_) {}
+                        try { if (this.__tvNeedsAuth) this.setRequestHeader(HEADER_NAME, HEADER_VALUE); } catch (_) {}
                         return origSend.apply(this, arguments);
                     };
                 }
                 const submitViaFetch = async (form) => {
                     if (!form || form.__tvSubmitting) return false;
                     const method = (form.method || 'GET').toUpperCase();
-                    if (method === 'GET') return false;
+                    if (method === 'GET' || !needsAuth(form.action || window.location.href)) return false;
                     const action = form.action || window.location.href;
                     form.__tvSubmitting = true;
                     try {
