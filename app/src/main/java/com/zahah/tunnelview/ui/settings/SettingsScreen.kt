@@ -1,5 +1,8 @@
 package com.zahah.tunnelview.ui.settings
 
+import com.zahah.tunnelview.network.parseLocalEndpoint
+import com.zahah.tunnelview.network.buildLocalEndpoint
+
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.activity.compose.BackHandler
@@ -392,7 +395,7 @@ fun SettingsScreen(
                 message = error
                 return
             }
-            if (httpHeader.trim().isEmpty() || httpKey.trim().isEmpty()) {
+            if (httpHeader.trim().isEmpty() != httpKey.trim().isEmpty()) {
                 val error = context.getString(R.string.settings_http_header_required)
                 message = error
                 return
@@ -459,9 +462,7 @@ fun SettingsScreen(
                 credentialsStore.setHttpHeaderName(normalizedHttpHeader.ifEmpty { null })
                 credentialsStore.setHttpHeaderValue(normalizedHttpKey.ifEmpty { null })
                 val httpReady = httpEnabled &&
-                    normalizedHttpAddress.isNotEmpty() &&
-                    normalizedHttpHeader.isNotEmpty() &&
-                    normalizedHttpKey.isNotEmpty()
+                    normalizedHttpAddress.isNotEmpty()
                 prefs.httpConnectionEnabled = httpReady
                 val normalizedDirectHost = localLanHost.trim()
                 val normalizedDirectPort = localLanPort.trim()
@@ -2820,36 +2821,6 @@ private fun PreferenceSwitchRow(
                 checkedThumbColor = MaterialTheme.colorScheme.primary
             )
         )
-    }
-}
-
-private fun parseLocalEndpoint(endpoint: String?): Pair<String?, String?> {
-    if (endpoint.isNullOrBlank()) return null to null
-    var cleaned = endpoint.trim()
-    cleaned = cleaned.removePrefix("https://").removePrefix("http://")
-    val slashIndex = cleaned.indexOf('/')
-    if (slashIndex >= 0) {
-        cleaned = cleaned.substring(0, slashIndex)
-    }
-    val colonIndex = cleaned.lastIndexOf(':')
-    return if (colonIndex >= 0 && colonIndex < cleaned.length - 1) {
-        val host = cleaned.substring(0, colonIndex)
-        val port = cleaned.substring(colonIndex + 1)
-        host to port
-    } else {
-        cleaned to ""
-    }
-}
-
-private fun buildLocalEndpoint(host: String, portRaw: String): String? {
-    if (host.isEmpty()) return null
-    val port = portRaw.toIntOrNull()
-    return buildString {
-        append(host)
-        if (port != null) {
-            append(':')
-            append(port)
-        }
     }
 }
 

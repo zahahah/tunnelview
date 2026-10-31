@@ -325,6 +325,7 @@ class MainCoordinator(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Events.BROADCAST) return
+            if (isDirectConfigured()) return
             val msg = intent.getStringExtra(Events.MESSAGE) ?: return
             when {
                 msg.startsWith("CONNECTED") -> {
@@ -906,7 +907,9 @@ class MainCoordinator(
                     if (prefs.cacheLastPage) {
                         showCachedPageIfAvailable()
                     }
-                    view.postDelayed({ startPrimaryNavigation(force = false) }, 2_000L)
+                    if (!isDirectConfigured()) {
+                        view.postDelayed({ startPrimaryNavigation(force = false) }, 2_000L)
+                    }
                 } else {
                     android.util.Log.e(
                         "WEBERR",
@@ -1338,6 +1341,7 @@ class MainCoordinator(
     }
 
     private fun startTunnelServiceSafely(action: String = Actions.START) {
+        if (isDirectConfigured() && action != Actions.STOP) return
         if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             pendingTunnelAction = action
             return
@@ -1597,6 +1601,7 @@ class MainCoordinator(
     }
 
     private fun requestTunnelReconnect(force: Boolean = false) {
+        if (isDirectConfigured()) return
         val state = currentTunnelState
         val shouldForce = force || tunnelForceReconnectPending
         if (!shouldForce && (state is TunnelManager.State.Connected || state is TunnelManager.State.Connecting)) {
@@ -1806,7 +1811,7 @@ class MainCoordinator(
                 val keepVisibleForAttempt = keepVisibleNext || showingCachedSnapshot
                 keepVisibleNext = showingCachedSnapshot
                 if (showingCachedSnapshot) {
-                    val target = snapshotRetryTarget
+                    val target = if (isDirectConfigured()) LoadTarget.DIRECT else snapshotRetryTarget
                     logConnection(
                         android.util.Log.DEBUG,
                         "WEBCONN"
@@ -1949,6 +1954,8 @@ class MainCoordinator(
             while (isActive) {
                 delay(monitorIntervalMs)
                 if (connectionJob?.isActive == true) continue
+                // Do not replace an active direct page because a root health probe fails.
+                if (isDirectConfigured() && currentTarget == LoadTarget.DIRECT && !showingCachedSnapshot) continue
 
                 val httpConfigured = isHttpConfigured()
                 val directConfigured = isDirectConfigured()
@@ -2364,10 +2371,8 @@ class MainCoordinator(
     private fun isDirectConfigured(): Boolean =
         prefs.hasDirectEndpointConfigured()
 
-    private fun isHttpConfigured(): Boolean {
-        if (!prefs.httpConnectionEnabled || prefs.httpAddress.isBlank()) return false
-        return credentialsStore.httpHeaderConfig() != null
-    }
+    private fun isHttpConfigured(): Boolean =
+        prefs.httpConnectionEnabled && prefs.httpAddress.isNotBlank()
 
     private fun directBaseUrl(): String {
         val manual = prefs.localIpEndpoint?.trim()?.takeIf { it.isNotEmpty() }
@@ -2398,7 +2403,7 @@ class MainCoordinator(
     }
 
     private fun connectionOrder(): List<LoadTarget> =
-        listOfNotNull(
+        if (isDirectConfigured()) listOf(LoadTarget.DIRECT) else listOfNotNull(
             LoadTarget.DIRECT.takeIf { isDirectConfigured() },
             LoadTarget.HTTP.takeIf { isHttpConfigured() },
             LoadTarget.TUNNEL
@@ -2416,7 +2421,7 @@ class MainCoordinator(
     }
 
     private fun fallbackTarget(from: LoadTarget): LoadTarget {
-        val baseOrder = listOf(LoadTarget.DIRECT, LoadTarget.HTTP, LoadTarget.TUNNEL)
+        val baseOrder = connectionOrder()
         val startIndex = baseOrder.indexOf(from).takeIf { it >= 0 } ?: 0
         for (step in 1 until baseOrder.size) {
             val candidate = baseOrder[(startIndex + step) % baseOrder.size]
@@ -2426,7 +2431,7 @@ class MainCoordinator(
                 LoadTarget.TUNNEL -> return LoadTarget.TUNNEL
             }
         }
-        return LoadTarget.TUNNEL
+        return baseOrder.first()
     }
 
     private fun nextRetryTarget(current: LoadTarget): LoadTarget {
@@ -2780,6 +2785,7 @@ class MainCoordinator(
 
     private fun scheduleDirectFallback() {
         cancelDirectFallback()
+        if (isDirectConfigured()) return
         if (currentTarget != LoadTarget.DIRECT) {
             return
         }
@@ -2800,7 +2806,7 @@ class MainCoordinator(
     }
 
     private fun shouldFallbackToTunnel(errorCode: Int): Boolean {
-        if (currentTarget == LoadTarget.TUNNEL || tunnelAttempted) return false
+        if (isDirectConfigured() || currentTarget == LoadTarget.TUNNEL || tunnelAttempted) return false
         return when (errorCode) {
             WebViewClient.ERROR_CONNECT,
             WebViewClient.ERROR_TIMEOUT,

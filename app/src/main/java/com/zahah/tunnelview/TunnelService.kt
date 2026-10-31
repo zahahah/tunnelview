@@ -54,6 +54,10 @@ class TunnelService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (prefs.hasDirectEndpointConfigured()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         when (intent?.action ?: Actions.START) {
             Actions.START -> handleStart()
             Actions.RECONNECT -> handleReconnect()
