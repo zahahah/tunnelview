@@ -55,8 +55,8 @@ android {
         applicationId "com.zahah.tunnelview"
         minSdk 26
         targetSdk 35
-        versionCode 25
-        versionName "2.1.1-rc.3.1"
+        versionCode 26
+        versionName "2.1.1-rc.3.2"
         vectorDrawables.useSupportLibrary = true
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_HOST", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_HOST"))
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_PORT", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_PORT"))
@@ -139,10 +139,11 @@ android {
     }
 
     sourceSets {
-        main {
-            if (includeBaseTemplate) {
-                assets.srcDir(baseTemplateDirPath)
-            }
+        // Never expose the generated template to the template variant itself.
+        // Putting it in main makes each build embed the previous template recursively.
+        if (includeBaseTemplate) {
+            debug.assets.srcDir(baseTemplateDirPath)
+            release.assets.srcDir(baseTemplateDirPath)
         }
     }
 }
@@ -177,6 +178,11 @@ if (includeBaseTemplate) {
             if (!templateApk.exists()) {
                 throw new GradleException("Template APK ${templateApk.absolutePath} not found; did assembleTemplate succeed?")
             }
+            new java.util.zip.ZipFile(templateApk).withCloseable { apk ->
+                if (apk.getEntry("assets/base_template_apk.tar") != null) {
+                    throw new GradleException("Template APK contains a nested base template; refusing recursive packaging")
+                }
+            }
             def execOps = project.services.get(ExecOperations)
             execOps.exec { ExecSpec execSpec ->
                 execSpec.workingDir(templateApk.parentFile)
@@ -193,7 +199,10 @@ if (includeBaseTemplate) {
             tasks.findByName(taskName)?.dependsOn(packageBaseTemplateTask)
         }
 
-        ["lintVitalAnalyzeRelease", "generateReleaseLintVitalReportModel"].each { taskName ->
+        ["lintVitalAnalyzeRelease", "generateReleaseLintVitalReportModel",
+         "generateDebugLintReportModel", "generateDebugUnitTestLintModel",
+         "generateDebugAndroidTestLintModel", "lintAnalyzeDebug",
+         "lintAnalyzeDebugUnitTest", "lintAnalyzeDebugAndroidTest"].each { taskName ->
             tasks.findByName(taskName)?.dependsOn(packageBaseTemplateTask)
         }
     }
