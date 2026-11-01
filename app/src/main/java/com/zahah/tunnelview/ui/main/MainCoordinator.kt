@@ -18,6 +18,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -723,14 +724,20 @@ class MainCoordinator(
                 val parsed = if (uri.scheme.equals("intent", true)) {
                     Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
                 } else null
-                val target = parsed?.data ?: if (parsed == null) uri else null
+                val originalTarget = parsed?.data ?: if (parsed == null) uri else null
+                val target = originalTarget?.let {
+                    ExternalLinkPolicy.externalTarget(it.toString()).toUri()
+                }
                 if (target == null || !ExternalLinkPolicy.isSafeIntentTarget(target.toString())) {
                     Toast.makeText(activity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show()
                 } else {
                     // Construct a new browsable VIEW intent: discard components, selectors,
                     // extras and permission flags supplied by untrusted web content.
                     val intent = Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
-                    parsed?.`package`?.let { intent.setPackage(it) }
+                    // A browser package from an HTTPS intent must not override native routing.
+                    if (target == originalTarget) {
+                        parsed?.`package`?.let { intent.setPackage(it) }
+                    }
                     activity.startActivity(intent)
                 }
             } catch (_: Exception) {
