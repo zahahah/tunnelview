@@ -5,30 +5,11 @@ import java.net.URLDecoder
 import java.util.Locale
 
 internal object ExternalLinkPolicy {
-    /**
-     * Rabby's /mobile/wc URL is an Android app link, not a web document.
-     * Bypass HTTPS app-link verification/browser fallbacks using its supported native scheme.
-     * Keep the pairing query encoded exactly as supplied by the dapp.
-     */
-    fun externalTarget(url: String): String = runCatching {
-        val uri = URI(url)
-        val rabbyPairingLink = uri.scheme.equals("https", true) &&
-            uri.host.equals("go.rabby.io", true) && uri.rawUserInfo == null &&
-            uri.port in setOf(-1, 443) && uri.rawPath in setOf("/mobile/wc", "/mobile/wc/")
-        if (!rabbyPairingLink) return@runCatching url
-        buildString {
-            append("rabby://wc")
-            uri.rawQuery?.let { append('?').append(it) }
-            uri.rawFragment?.let { append('#').append(it) }
-        }
-    }.getOrDefault(url)
-
     private val internalSchemes = setOf("about", "data", "blob", "javascript", "file", "content")
     fun isWebUrl(url: String): Boolean =
         url.substringBefore(':', "").lowercase(Locale.ROOT) in setOf("http", "https")
 
     fun isExternal(url: String): Boolean {
-        if (externalTarget(url) != url) return true
         val scheme = url.substringBefore(':', "").lowercase(Locale.ROOT)
         if (scheme.isEmpty() || scheme in internalSchemes) return false
         if (!isWebUrl(url)) return true

@@ -237,7 +237,7 @@ class Prefs(ctx: Context) {
         }
 
     var allowExternalApps: Boolean
-        get() = sp.getBoolean("allowExternalApps", false)
+        get() = sp.getBoolean("allowExternalApps", true)
         set(value) = sp.edit { putBoolean("allowExternalApps", value) }
 
     var cacheLastPage: Boolean

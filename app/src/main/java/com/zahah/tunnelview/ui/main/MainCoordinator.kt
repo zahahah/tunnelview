@@ -1,6 +1,7 @@
 package com.zahah.tunnelview.ui.main
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
@@ -74,6 +75,7 @@ import com.zahah.tunnelview.logging.ConnEvent
 import com.zahah.tunnelview.logging.ConnLogger
 import com.zahah.tunnelview.ssh.TunnelManager
 import com.zahah.tunnelview.network.HttpClient
+import com.zahah.tunnelview.webview.ExternalHandoffGuard
 import com.zahah.tunnelview.webview.ExternalLinkPolicy
 import com.zahah.tunnelview.webview.WebViewConfigurator
 import com.zahah.tunnelview.work.EndpointSyncWorker
@@ -155,6 +157,7 @@ class MainCoordinator(
     private var tunnelReconnectFailed = false
     private var httpReconnectFailed = false
     private var tunnelForceReconnectPending = false
+    private val externalHandoff = ExternalHandoffGuard()
     private var currentTarget = LoadTarget.DIRECT
     private var lastAnnouncedTarget: LoadTarget? = null
     private var lastTapAt = 0L
@@ -327,7 +330,8 @@ class MainCoordinator(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Events.BROADCAST) return
-            if (isDirectConfigured()) return
+            if (isDirectConfigured() ||
+                (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent())) return
             val msg = intent.getStringExtra(Events.MESSAGE) ?: return
             when {
                 msg.startsWith("CONNECTED") -> {
@@ -389,6 +393,14 @@ class MainCoordinator(
 
     fun onStart() {
         isForeground = true
+        if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) {
+            resumeConnectionOnForeground = false
+            resumeConnectionForce = false
+            resumeMonitorOnForeground = false
+            showContent()
+            startConnectionMonitor()
+            return
+        }
         val shouldStartTunnel = shouldStartTunnelService()
         if (shouldStartTunnel) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -399,7 +411,7 @@ class MainCoordinator(
         }
         val queuedAction = pendingTunnelAction
         pendingTunnelAction = null
-        val shouldRunFallbackWatchers = !isHttpConfigured()
+        val shouldRunFallbackWatchers = !isHttpConfigured() && !isDirectConfigured()
         if (shouldRunFallbackWatchers) {
             startFallbackWatchers(forceImmediate = true)
         } else {
@@ -423,6 +435,7 @@ class MainCoordinator(
 
     fun onResume() {
         isForeground = true
+        if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) return
         resumeConnectionFlow()
         ensureUpdateCheckOnAppOpen()
         maybeCheckForAppUpdate(fromForeground = true)
@@ -569,6 +582,7 @@ class MainCoordinator(
     }
 
     private fun onHttpPreferencesChanged() {
+        externalHandoff.clear()
         val httpConfigured = isHttpConfigured()
         val keepVisible = keepContentVisibleDuringLoad || webView.isVisible
         activity.runOnUiThread {
@@ -724,21 +738,22 @@ class MainCoordinator(
                 val parsed = if (uri.scheme.equals("intent", true)) {
                     Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME)
                 } else null
-                val originalTarget = parsed?.data ?: if (parsed == null) uri else null
-                val target = originalTarget?.let {
-                    ExternalLinkPolicy.externalTarget(it.toString()).toUri()
-                }
+                val target = parsed?.data ?: if (parsed == null) uri else null
                 if (target == null || !ExternalLinkPolicy.isSafeIntentTarget(target.toString())) {
                     Toast.makeText(activity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show()
                 } else {
                     // Construct a new browsable VIEW intent: discard components, selectors,
                     // extras and permission flags supplied by untrusted web content.
                     val intent = Intent(Intent.ACTION_VIEW, target).addCategory(Intent.CATEGORY_BROWSABLE)
-                    // A browser package from an HTTPS intent must not override native routing.
-                    if (target == originalTarget) {
-                        parsed?.`package`?.let { intent.setPackage(it) }
+                    parsed?.`package`?.let { intent.setPackage(it) }
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (ExternalLinkPolicy.isWebUrl(target.toString()) &&
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER)
                     }
-                    activity.startActivity(intent)
+                    val currentPage = webView.url
+                    activity.startActivity(withoutBrowserFallback(intent))
+                    externalHandoff.begin(currentPage, SystemClock.elapsedRealtime())
                 }
             } catch (_: Exception) {
                 // Do not load a wallet download/fallback URL into the current dapp.
@@ -754,6 +769,27 @@ class MainCoordinator(
                 .show()
         }
         return true
+    }
+
+    // The query-based fallback runs only below Android 11, before package visibility filtering.
+    @SuppressLint("QueryPermissionsNeeded")
+    @Suppress("DEPRECATION")
+    private fun withoutBrowserFallback(intent: Intent): Intent {
+        if (!ExternalLinkPolicy.isWebUrl(intent.dataString.orEmpty()) ||
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return intent
+        val manager = activity.packageManager
+        val browserProbe = Intent(Intent.ACTION_VIEW, "https://example.invalid/".toUri())
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        val browsers = manager.queryIntentActivities(browserProbe, 0)
+            .map { it.activityInfo.packageName }.toSet()
+        val nativeTargets = manager.queryIntentActivities(intent, 0)
+            .map { it.activityInfo.packageName }.distinct().filterNot { it in browsers }
+        if (nativeTargets.isEmpty()) throw ActivityNotFoundException()
+        val choices = nativeTargets.map { Intent(intent).setPackage(it) }
+        if (choices.size == 1) return choices.first()
+        return Intent.createChooser(choices.first(), activity.getString(R.string.external_app_open))
+            .putExtra(Intent.EXTRA_INITIAL_INTENTS, choices.drop(1).toTypedArray())
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     private fun configureWebView() {
@@ -807,6 +843,15 @@ class MainCoordinator(
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val now = SystemClock.elapsedRealtime()
+                if (externalHandoff.blocks(request.url.toString(), request.isForMainFrame, request.hasGesture(), now)) {
+                    logHttpEvent(ConnEvent.Level.WARN,
+                        "Automatic external fallback blocked: ${summarizeUrlForDiagnostics(request.url.toString())}")
+                    Toast.makeText(activity, R.string.external_fallback_blocked, Toast.LENGTH_LONG).show()
+                    return true
+                }
+                if (request.isForMainFrame && request.hasGesture() &&
+                    ExternalLinkPolicy.isWebUrl(request.url.toString())) externalHandoff.clear()
                 if (handleExternalLink(request.url, request.isForMainFrame, request.hasGesture())) return true
                 val mapped = toLocalLoopbackIfNeeded(request.url)
                 return when {
@@ -814,7 +859,7 @@ class MainCoordinator(
                         view.loadUrl(mapped.toString())
                         true
                     }
-                    currentTarget == LoadTarget.HTTP &&
+                    currentTarget == LoadTarget.HTTP && httpRequestHeaders() != null &&
                         ExternalLinkPolicy.sameOrigin(request.url.toString(), httpBaseUrl()) -> {
                         loadUrlForTarget(request.url.toString(), LoadTarget.HTTP)
                         true
@@ -948,6 +993,10 @@ class MainCoordinator(
                 if (request.isForMainFrame) {
                     shouldSnapshotCurrentPage = false
                     val status = errorResponse.statusCode
+                    if (status == 401 || status == 403) {
+                        logHttpEvent(ConnEvent.Level.WARN,
+                            "Navigation denied: ${summarizeUrlForDiagnostics(request.url.toString())}", status)
+                    }
                     android.util.Log.e("WEBERR", "Main HTTP $status ${errorResponse.reasonPhrase}")
                     cancelDirectFallback()
                     if (!shouldShowOfflineForHttp(status)) {
@@ -972,6 +1021,9 @@ class MainCoordinator(
                 request: WebResourceRequest
             ): WebResourceResponse? {
                 val isMain = request.isForMainFrame
+                // Main-frame redirects must remain visible to WebView navigation policy.
+                // Following them in OkHttp returns a different origin's body under the old URL.
+                if (isMain) return null
                 val method = request.method.uppercase(Locale.US)
                 if (method != "GET") return null
                 return when (currentTarget) {
@@ -996,7 +1048,8 @@ class MainCoordinator(
                     LoadTarget.HTTP -> {
                         val url = request.url.toString()
                         // Let WebView preserve redirects, methods and cookies for third-party sites.
-                        if (!ExternalLinkPolicy.sameOrigin(url, httpBaseUrl())) return null
+                        if (httpRequestHeaders() == null ||
+                            !ExternalLinkPolicy.sameOrigin(url, httpBaseUrl())) return null
                         if (isMain) {
                             logConnection(android.util.Log.DEBUG, "WEBREQ") { "MAIN HTTP $method $url" }
                         } else if (prefs.connectionDebugLoggingEnabled) {
@@ -1359,6 +1412,7 @@ class MainCoordinator(
             return
         }
         if (isAvailable && previous == false) {
+            if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) return
             tunnelForceReconnectPending = true
             activity.runOnUiThread {
                 keepContentVisibleDuringLoad = showingCachedSnapshot || webView.isVisible
@@ -2005,6 +2059,7 @@ class MainCoordinator(
             while (isActive) {
                 delay(monitorIntervalMs)
                 if (connectionJob?.isActive == true) continue
+                if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) continue
                 // Do not replace an active direct page because a root health probe fails.
                 if (isDirectConfigured() && currentTarget == LoadTarget.DIRECT && !showingCachedSnapshot) continue
 

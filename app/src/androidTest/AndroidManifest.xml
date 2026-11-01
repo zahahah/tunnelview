@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name="com.zahah.tunnelview.testfixtures.ExternalApprovalActivity"
+            android:exported="true" android:launchMode="singleTask"
+            android:taskAffinity="com.zahah.tunnelview.externaltest">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="externaltest"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

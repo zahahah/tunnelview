@@ -718,8 +718,6 @@ fun SettingsScreen(
         when (effectivePage) {
             SettingsPage.ROOT -> SettingsRootPage(
                 modifier = baseModifier,
-                allowExternalApps = allowExternalApps,
-                onAllowExternalAppsChange = ::setExternalAppsAllowed,
                 lastEndpoint = lastEndpoint,
                 lastEndpointSource = lastEndpointSource,
                 message = message,
@@ -1012,8 +1010,6 @@ fun SettingsScreen(
 @Composable
 private fun SettingsRootPage(
     modifier: Modifier,
-    allowExternalApps: Boolean,
-    onAllowExternalAppsChange: (Boolean) -> Unit,
     lastEndpoint: String?,
     lastEndpointSource: String?,
     message: String?,
@@ -1051,15 +1047,6 @@ private fun SettingsRootPage(
         BackHeader(
             title = stringResource(id = R.string.settings_sections_title),
             onBack = onExit
-        )
-        PreferenceSwitchRow(
-            title = stringResource(R.string.settings_external_apps_label),
-            checked = allowExternalApps,
-            onCheckedChange = onAllowExternalAppsChange
-        )
-        Text(
-            text = stringResource(R.string.settings_external_apps_description),
-            style = MaterialTheme.typography.bodySmall
         )
         Text(
             text = endpointText,
