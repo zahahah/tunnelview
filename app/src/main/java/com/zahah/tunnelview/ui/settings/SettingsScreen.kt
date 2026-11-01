@@ -355,6 +355,11 @@ fun SettingsScreen(
         }
     }
 
+    fun setExternalAppsAllowed(enabled: Boolean) {
+        prefs.allowExternalApps = enabled
+        allowExternalApps = enabled
+    }
+
     fun triggerSave(showMessage: Boolean) {
         val trimmedPassword = settingsPasswordInput.trim()
         val trimmedPasswordConfirm = settingsPasswordConfirm.trim()
@@ -713,6 +718,8 @@ fun SettingsScreen(
         when (effectivePage) {
             SettingsPage.ROOT -> SettingsRootPage(
                 modifier = baseModifier,
+                allowExternalApps = allowExternalApps,
+                onAllowExternalAppsChange = ::setExternalAppsAllowed,
                 lastEndpoint = lastEndpoint,
                 lastEndpointSource = lastEndpointSource,
                 message = message,
@@ -823,10 +830,7 @@ fun SettingsScreen(
             SettingsPage.PREFERENCES -> PreferencesPage(
                 modifier = baseModifier,
                 allowExternalApps = allowExternalApps,
-                onAllowExternalAppsChange = {
-                    allowExternalApps = it
-                    if (autoSaveEnabled) triggerSave(showMessage = false)
-                },
+                onAllowExternalAppsChange = ::setExternalAppsAllowed,
                 cacheLastPage = cacheLastPage,
                 persistentNotification = persistentNotification,
                 connectionDebug = connectionDebug,
@@ -1008,6 +1012,8 @@ fun SettingsScreen(
 @Composable
 private fun SettingsRootPage(
     modifier: Modifier,
+    allowExternalApps: Boolean,
+    onAllowExternalAppsChange: (Boolean) -> Unit,
     lastEndpoint: String?,
     lastEndpointSource: String?,
     message: String?,
@@ -1045,6 +1051,15 @@ private fun SettingsRootPage(
         BackHeader(
             title = stringResource(id = R.string.settings_sections_title),
             onBack = onExit
+        )
+        PreferenceSwitchRow(
+            title = stringResource(R.string.settings_external_apps_label),
+            checked = allowExternalApps,
+            onCheckedChange = onAllowExternalAppsChange
+        )
+        Text(
+            text = stringResource(R.string.settings_external_apps_description),
+            style = MaterialTheme.typography.bodySmall
         )
         Text(
             text = endpointText,
@@ -1825,6 +1840,12 @@ private fun PreferencesPage(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                PreferenceSwitchRow(
+                    title = stringResource(id = R.string.settings_external_apps_label),
+                    checked = allowExternalApps,
+                    onCheckedChange = onAllowExternalAppsChange
+                )
+                Text(text = stringResource(R.string.settings_external_apps_description))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = stringResource(id = R.string.settings_language_label),
@@ -1870,12 +1891,6 @@ private fun PreferencesPage(
                     onPasswordChange = onSettingsPasswordInputChange,
                     onConfirmPasswordChange = onSettingsPasswordConfirmChange
                 )
-                PreferenceSwitchRow(
-                    title = stringResource(id = R.string.settings_external_apps_label),
-                    checked = allowExternalApps,
-                    onCheckedChange = onAllowExternalAppsChange
-                )
-                Text(text = stringResource(R.string.settings_external_apps_description))
                 PreferenceSwitchRow(
                     title = stringResource(id = R.string.label_cache_last_page),
                     checked = cacheLastPage,

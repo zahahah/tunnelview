@@ -349,9 +349,9 @@
     <string name="settings_password_gate_cancel">Close</string>
     <string name="settings_password_gate_error">Incorrect password. Try again.</string>
     <string name="dialog_close">Close</string>
-    <string name="settings_external_apps_label">Allow links to external apps</string>
-    <string name="settings_external_apps_description">Open wallets and other apps through links, including WalletConnect. Enable only for trusted pages. Off by default.</string>
-    <string name="external_apps_disabled">Enable “Allow links to external apps” in Settings → Preferences.</string>
+    <string name="settings_external_apps_label">External apps — Rabby / WalletConnect</string>
+    <string name="settings_external_apps_description">Allow links to open wallets and other apps. Saved immediately. Enable only for trusted pages.</string>
+    <string name="external_apps_disabled">Enable “External apps — Rabby / WalletConnect” at the top of Settings.</string>
     <string name="external_app_unavailable">Unable to open this link. Check that a compatible wallet or app is installed.</string>
     <string name="external_app_confirm_title">Open external app?</string>
     <string name="external_app_confirm_message">This page wants to open another app. Continue only if you initiated this connection.</string>
