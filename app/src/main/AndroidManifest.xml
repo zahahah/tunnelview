@@ -14,6 +14,20 @@
     <!-- Android 13+: notifications (requested at runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Discover native handlers for web app links, including links without pairing data. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" android:host="*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="*" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TunnelApplication"
         android:allowBackup="true"

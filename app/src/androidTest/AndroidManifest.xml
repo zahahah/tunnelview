@@ -9,6 +9,14 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="externaltest"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="http" android:host="127.0.0.1"
+                    android:path="/open-for-signature"/>
+                <data android:host="localhost"/>
+            </intent-filter>
         </activity>
     </application>
 </manifest>

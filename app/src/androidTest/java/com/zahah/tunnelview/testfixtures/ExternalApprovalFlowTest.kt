@@ -2,6 +2,10 @@ package com.zahah.tunnelview.testfixtures
 
 import kotlinx.coroutines.runBlocking
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import android.os.SystemClock
 import android.webkit.WebView
 import android.view.accessibility.AccessibilityNodeInfo
@@ -11,6 +15,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.espresso.matcher.ViewMatchers.withId
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import com.zahah.tunnelview.MainActivity
 import com.zahah.tunnelview.storage.CredentialsStore
 import com.zahah.tunnelview.SettingsActivity
@@ -21,6 +27,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -32,11 +39,23 @@ class ExternalApprovalFlowTest {
 
     @Test fun authenticatedHttpCallbackRedirectPreservesPage() = runApproval(true, true)
 
-    private fun runApproval(httpMode: Boolean, authenticated: Boolean = false) {
+    @Test fun signatureAppLinkWithoutPairingUriReopensNativeApp() = runApproval(true, true, true)
+
+    @Test fun asyncSignatureAppLinkReopensNativeApp() = runApproval(true, true, true, true)
+
+    private fun runApproval(httpMode: Boolean, authenticated: Boolean = false,
+        signAgain: Boolean = false, asyncSign: Boolean = false) {
         val origin = MockWebServer()
         val denied = MockWebServer()
         origin.start()
         denied.start()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val approvals = AtomicInteger()
+        val approvalReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { approvals.incrementAndGet() }
+        }
+        ContextCompat.registerReceiver(context, approvalReceiver,
+            IntentFilter("com.zahah.tunnelview.TEST_EXTERNAL_APPROVED"), ContextCompat.RECEIVER_EXPORTED)
         try {
             denied.enqueue(MockResponse().setResponseCode(403).setHeader("Content-Type", "application/xml")
                 .setBody("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"))
@@ -49,13 +68,15 @@ class ExternalApprovalFlowTest {
             """.trimIndent()
             origin.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
                 override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) =
-                    if (authenticated && request.getHeader("X-Test-Access") != "dummy-access") {
+                    if (request.path == "/open-for-signature") {
+                        MockResponse().setResponseCode(403).setHeader("Content-Type", "application/xml")
+                            .setBody("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>")
+                    } else if (authenticated && request.getHeader("X-Test-Access") != "dummy-access") {
                         MockResponse().setResponseCode(401)
                     } else if (request.path == "/after-approval") {
                         MockResponse().setResponseCode(302).setHeader("Location", denied.url("/denied"))
                     } else MockResponse().setHeader("Content-Type", "text/html").setBody(html)
             }
-            val context = InstrumentationRegistry.getInstrumentation().targetContext
             runBlocking {
                 val store = CredentialsStore.getInstance(context)
                 store.setHttpHeaderName(if (authenticated) "X-Test-Access" else null)
@@ -76,16 +97,56 @@ class ExternalApprovalFlowTest {
                     SystemClock.sleep(100)
                 }
                 assertNotEquals("Page did not load", "null", identity)
+                var focused = false
+                for (i in 0..50) {
+                    scenario.onActivity { focused = it.window.decorView.hasWindowFocus() }
+                    if (focused) break
+                    SystemClock.sleep(100)
+                }
+                assertTrue("Main window never gained focus", focused)
                 evaluate(scenario, "document.getElementById('connect').click(); true")
-                onView(withText(R.string.external_app_open)).perform(click())
+                onView(withText(R.string.external_app_open)).inRoot(isDialog()).perform(click())
                 SystemClock.sleep(3500)
                 assertEquals(identity, evaluate(scenario, "window.pageIdentity || null"))
                 assertEquals("true", evaluate(scenario,
                     "window.location.origin === '${origin.url("/").toString().trimEnd('/')}'"))
                 assertNull("Fallback XML endpoint must never replace the dapp",
                     denied.takeRequest(300, TimeUnit.MILLISECONDS))
+                if (signAgain) {
+                    assertEquals("Initial approval did not complete", 1, approvals.get())
+                    // Signing wake-up links often have no pairing URI. Use a genuine user tap,
+                    // which must not clear protection and load the app-link endpoint as HTML.
+                    evaluate(scenario, """
+                        document.body.innerHTML='<button id="sign" style="position:fixed;inset:0;width:100%;height:100%">Sign</button>';
+                        document.getElementById('sign').onclick=function() {
+                            window.location.href='${origin.url("/open-for-signature")}';
+                            setTimeout(function(){window.location.href='${denied.url("/after-signing")}';},1400);
+                        }; true;
+                    """.trimIndent())
+                    if (asyncSign) {
+                        // Simulate the previous connection protection expiring before signing.
+                        scenario.onActivity {
+                            val coordinator = MainActivity::class.java.getDeclaredField("coordinator")
+                                .apply { isAccessible = true }.get(it)
+                            val guard = coordinator.javaClass.getDeclaredField("externalHandoff")
+                                .apply { isAccessible = true }.get(coordinator)
+                            guard.javaClass.getDeclaredMethod("clear").invoke(guard)
+                        }
+                        evaluate(scenario, "document.getElementById('sign').click(); true")
+                        SystemClock.sleep(1800)
+                        assertEquals("Page changed while waiting for external confirmation", identity,
+                            evaluate(scenario, "window.pageIdentity || null"))
+                        onView(withText(R.string.external_app_open)).inRoot(isDialog()).perform(click())
+                    } else onView(withId(R.id.webview)).perform(click())
+                    SystemClock.sleep(3500)
+                    assertEquals("Signature link did not reopen the native app", 2, approvals.get())
+                    assertEquals(identity, evaluate(scenario, "window.pageIdentity || null"))
+                    assertNull("Signing fallback must not request an XML page",
+                        denied.takeRequest(300, TimeUnit.MILLISECONDS))
+                }
             }
         } finally {
+            context.unregisterReceiver(approvalReceiver)
             origin.shutdown()
             denied.shutdown()
         }

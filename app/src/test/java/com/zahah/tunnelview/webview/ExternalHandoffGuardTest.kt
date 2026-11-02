@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ExternalHandoffGuardTest {
+    @Test fun `a later signature request renews an expired handoff`() {
+        val guard = ExternalHandoffGuard()
+        guard.begin("https://site.example/work", 100)
+        assertFalse(guard.active(400_000))
+        guard.begin("https://site.example/work", 400_000)
+        assertTrue(guard.blocks("https://external.example/denied", true, false, 400_001))
+    }
+
     @Test fun `automatic cross-origin fallback after approval cannot replace the live page`() {
         val guard = ExternalHandoffGuard()
         guard.begin("https://site.example/work", 100)

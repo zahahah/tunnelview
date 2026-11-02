@@ -21,6 +21,10 @@ public class ExternalApprovalActivity extends Activity {
         approve();
     }
     private void approve() {
-        new Handler(Looper.getMainLooper()).postDelayed(() -> moveTaskToBack(true), 700);
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            sendBroadcast(new Intent("com.zahah.tunnelview.TEST_EXTERNAL_APPROVED")
+                .setPackage("com.zahah.tunnelview"));
+            moveTaskToBack(true);
+        }, 700);
     }
 }

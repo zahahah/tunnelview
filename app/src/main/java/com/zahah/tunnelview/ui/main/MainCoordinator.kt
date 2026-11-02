@@ -1,7 +1,6 @@
 package com.zahah.tunnelview.ui.main
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
@@ -726,13 +725,19 @@ class MainCoordinator(
     }
 
     private fun handleExternalLink(uri: Uri, mainFrame: Boolean, userGesture: Boolean): Boolean {
-        if (!ExternalLinkPolicy.isExternal(uri.toString())) return false
+        val nativeWebLink = mainFrame && ExternalLinkPolicy.isWebUrl(uri.toString()) &&
+            nativeWebIntents(Intent(Intent.ACTION_VIEW, uri)
+                .addCategory(Intent.CATEGORY_BROWSABLE)).isNotEmpty()
+        if (!nativeWebLink && !ExternalLinkPolicy.isExternal(uri.toString())) return false
         // Never send custom schemes to WebView, even when external apps are disabled.
         if (!mainFrame) return true
         if (!prefs.allowExternalApps) {
             Toast.makeText(activity, R.string.external_apps_disabled, Toast.LENGTH_LONG).show()
             return true
         }
+        val sourcePage = webView.url
+        // Preserve the live page even while the user reads the confirmation dialog.
+        externalHandoff.begin(sourcePage, SystemClock.elapsedRealtime())
         val launch = {
             try {
                 val parsed = if (uri.scheme.equals("intent", true)) {
@@ -751,9 +756,9 @@ class MainCoordinator(
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         intent.addFlags(Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER)
                     }
-                    val currentPage = webView.url
-                    activity.startActivity(withoutBrowserFallback(intent))
-                    externalHandoff.begin(currentPage, SystemClock.elapsedRealtime())
+                    val targetIntent = withoutBrowserFallback(intent)
+                    externalHandoff.begin(sourcePage, SystemClock.elapsedRealtime())
+                    activity.startActivity(targetIntent)
                 }
             } catch (_: Exception) {
                 // Do not load a wallet download/fallback URL into the current dapp.
@@ -771,21 +776,26 @@ class MainCoordinator(
         return true
     }
 
-    // The query-based fallback runs only below Android 11, before package visibility filtering.
-    @SuppressLint("QueryPermissionsNeeded")
     @Suppress("DEPRECATION")
-    private fun withoutBrowserFallback(intent: Intent): Intent {
-        if (!ExternalLinkPolicy.isWebUrl(intent.dataString.orEmpty()) ||
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return intent
+    private fun nativeWebIntents(intent: Intent): List<Intent> {
+        if (!ExternalLinkPolicy.isWebUrl(intent.dataString.orEmpty())) return emptyList()
         val manager = activity.packageManager
-        val browserProbe = Intent(Intent.ACTION_VIEW, "https://example.invalid/".toUri())
-            .addCategory(Intent.CATEGORY_BROWSABLE)
-        val browsers = manager.queryIntentActivities(browserProbe, 0)
-            .map { it.activityInfo.packageName }.toSet()
-        val nativeTargets = manager.queryIntentActivities(intent, 0)
-            .map { it.activityInfo.packageName }.distinct().filterNot { it in browsers }
-        if (nativeTargets.isEmpty()) throw ActivityNotFoundException()
-        val choices = nativeTargets.map { Intent(intent).setPackage(it) }
+        val flags = android.content.pm.PackageManager.MATCH_ALL
+        val browsers = listOf("http", "https").flatMap { scheme ->
+            val probe = Intent(Intent.ACTION_VIEW, "$scheme://example.invalid/".toUri())
+                .addCategory(Intent.CATEGORY_BROWSABLE)
+            manager.queryIntentActivities(probe, flags).map { it.activityInfo.packageName }
+        }.toSet()
+        return manager.queryIntentActivities(intent, flags)
+            .filter { it.activityInfo.exported && it.activityInfo.packageName !in browsers }
+            .map { it.activityInfo.packageName }.distinct()
+            .map { Intent(intent).setPackage(it) }
+    }
+
+    private fun withoutBrowserFallback(intent: Intent): Intent {
+        if (!ExternalLinkPolicy.isWebUrl(intent.dataString.orEmpty())) return intent
+        val choices = nativeWebIntents(intent)
+        if (choices.isEmpty()) throw ActivityNotFoundException()
         if (choices.size == 1) return choices.first()
         return Intent.createChooser(choices.first(), activity.getString(R.string.external_app_open))
             .putExtra(Intent.EXTRA_INITIAL_INTENTS, choices.drop(1).toTypedArray())
@@ -843,6 +853,7 @@ class MainCoordinator(
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (handleExternalLink(request.url, request.isForMainFrame, request.hasGesture())) return true
                 val now = SystemClock.elapsedRealtime()
                 if (externalHandoff.blocks(request.url.toString(), request.isForMainFrame, request.hasGesture(), now)) {
                     logHttpEvent(ConnEvent.Level.WARN,
@@ -852,7 +863,6 @@ class MainCoordinator(
                 }
                 if (request.isForMainFrame && request.hasGesture() &&
                     ExternalLinkPolicy.isWebUrl(request.url.toString())) externalHandoff.clear()
-                if (handleExternalLink(request.url, request.isForMainFrame, request.hasGesture())) return true
                 val mapped = toLocalLoopbackIfNeeded(request.url)
                 return when {
                     currentTarget == LoadTarget.TUNNEL && mapped != request.url -> {
