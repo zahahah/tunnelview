@@ -211,11 +211,7 @@ class NtfySseService : Service() {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, NtfySseService::class.java).apply {
-                    action = Actions.STOP_SSE
-                }
-            )
+            context.stopService(Intent(context, NtfySseService::class.java))
         }
     }
 }

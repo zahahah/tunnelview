@@ -56,8 +56,8 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         minSdk 26
         targetSdk 35
-        versionCode 28
-        versionName "2.1.1-rc.5"
+        versionCode 29
+        versionName "2.1.1-rc.6"
         vectorDrawables.useSupportLibrary = true
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_HOST", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_HOST"))
         buildConfigField "String", "DEFAULT_REMOTE_INTERNAL_PORT", quoteString(envValue("DEFAULT_REMOTE_INTERNAL_PORT"))

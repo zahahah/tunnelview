@@ -23,6 +23,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -211,7 +212,7 @@ class MainCoordinator(
     private var resumeConnectionOnForeground = false
     private var resumeConnectionForce = false
     private var resumeMonitorOnForeground = false
-    private var isForeground = false
+    @Volatile private var isForeground = false
     private var keepWebViewVisibleDuringLoading = false
     private var pendingTunnelNavigation = false
     private var mainFrameCommitVisible = false
@@ -234,6 +235,15 @@ class MainCoordinator(
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key != null && httpPreferenceKeys.contains(key)) {
                 onHttpPreferencesChanged()
+            } else if (key == "cacheLastPage" && ::webView.isInitialized) {
+                activity.runOnUiThread {
+                    if (prefs.cacheLastPage) {
+                        pendingSnapshot = true
+                        lastSnapshotUrl = null
+                        lastSnapshotHash = 0
+                    }
+                    injectDiagnostics()
+                }
             }
         }
     private val credentialsChangeListener =
@@ -373,6 +383,51 @@ class MainCoordinator(
         }
     }
 
+    private var screenReceiverRegistered = false
+    @Volatile private var webViewPausedForScreenOff = false
+    private var deferredStartForScreenOff = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    if (!webViewPausedForScreenOff) {
+                        webView.onPause()
+                        webViewPausedForScreenOff = true
+                    }
+                    if (isForeground) {
+                        isForeground = false
+                        pauseConnectionFlow()
+                    }
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        if (deferredStartForScreenOff) onStart()
+                        resumeAfterScreenOn()
+                        if (isForeground &&
+                            !(externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent())) {
+                            resumeConnectionFlow()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun resumeAfterScreenOn() {
+        if (!isScreenInteractive()) {
+            isForeground = false
+            return
+        }
+        if (webViewPausedForScreenOff) {
+            webView.onResume()
+            webViewPausedForScreenOff = false
+        }
+        isForeground = true
+    }
+
+    private fun isScreenInteractive(): Boolean =
+        (activity.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != false
+
     fun onCreate(savedInstanceState: Bundle?) {
         prefs = Prefs(activity)
         prefs.registerListener(prefsChangeListener)
@@ -380,6 +435,15 @@ class MainCoordinator(
         bindViews()
         setupInsets()
         configureWebView()
+        ContextCompat.registerReceiver(activity, screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenReceiverRegistered = true
+        if (!isScreenInteractive()) {
+            screenReceiver.onReceive(activity, Intent(Intent.ACTION_SCREEN_OFF))
+        }
         setupToolbar()
         setupContent(savedInstanceState)
         registerStatusReceiver()
@@ -391,6 +455,12 @@ class MainCoordinator(
     }
 
     fun onStart() {
+        if (!isScreenInteractive()) {
+            deferredStartForScreenOff = true
+            isForeground = false
+            return
+        }
+        deferredStartForScreenOff = false
         isForeground = true
         if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) {
             resumeConnectionOnForeground = false
@@ -433,7 +503,9 @@ class MainCoordinator(
     }
 
     fun onResume() {
-        isForeground = true
+        if (deferredStartForScreenOff && isScreenInteractive()) onStart()
+        resumeAfterScreenOn()
+        if (!isForeground) return
         if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) return
         resumeConnectionFlow()
         ensureUpdateCheckOnAppOpen()
@@ -444,7 +516,6 @@ class MainCoordinator(
         isForeground = false
         pauseConnectionFlow()
         stopFallbackWatchers()
-        EndpointSyncWorker.cancelPeriodic(activity.applicationContext)
         if (!activity.isChangingConfigurations) {
             shouldCheckUpdateOnForeground = true
         }
@@ -452,6 +523,10 @@ class MainCoordinator(
     }
 
     fun onDestroy() {
+        if (screenReceiverRegistered) {
+            activity.unregisterReceiver(screenReceiver)
+            screenReceiverRegistered = false
+        }
         if (receiverRegistered) {
             activity.unregisterReceiver(receiver)
             receiverRegistered = false
@@ -1422,6 +1497,11 @@ class MainCoordinator(
             return
         }
         if (isAvailable && previous == false) {
+            if (!isForeground) {
+                resumeConnectionOnForeground = true
+                resumeConnectionForce = true
+                return
+            }
             if (externalHandoff.active(SystemClock.elapsedRealtime()) && hasStablePrimaryContent()) return
             tunnelForceReconnectPending = true
             activity.runOnUiThread {
@@ -1525,13 +1605,9 @@ class MainCoordinator(
     }
 
     private fun stopNtfyUpdates() {
-        val intent = Intent(activity, NtfySseService::class.java).apply {
-            action = Actions.STOP_SSE
-        }
-        try {
-            activity.startService(intent)
-        } catch (_: IllegalStateException) {
-        }
+        // stopService is a no-op when the service is absent; starting it merely to
+        // deliver STOP creates it and initializes its dependencies unnecessarily.
+        activity.stopService(Intent(activity, NtfySseService::class.java))
     }
 
     private fun startFallbackWatchers(forceImmediate: Boolean) {
@@ -3389,25 +3465,103 @@ class MainCoordinator(
     }
 
     private fun injectDiagnostics() {
+        if (!prefs.cacheLastPage) {
+            webView.evaluateJavascript(
+                "if (window.__tunnelviewSetSnapshotEnabled) window.__tunnelviewSetSnapshotEnabled(false);",
+                null
+            )
+            return
+        }
         val diagJs = """
                 (function() {
-                    if (window.__netHooked2) return;
+                    if (window.__netHooked2) {
+                        if (typeof window.__tunnelviewSetSnapshotEnabled === 'function') {
+                            window.__tunnelviewSetSnapshotEnabled(true);
+                        }
+                        return;
+                    }
                     window.__netHooked2 = true;
 
                     let __pendingNet = 0;
                     let __snapshotTimer = null;
+                    let __snapshotInterval = null;
+                    let __snapshotEnabled = true;
+                    let __snapshotDirty = true;
+                    let __snapshotUrl = null;
+                    let __observingMutations = false;
+                    let __snapshotObserver = null;
+                    const __observeOptions = {
+                        subtree: true, childList: true, attributes: true, characterData: true
+                    };
+                    try {
+                        if (typeof window.MutationObserver === 'function' && document.documentElement) {
+                            __snapshotObserver = new window.MutationObserver(() => {
+                                __snapshotDirty = true;
+                                // One change is enough until the next capture; avoid per-frame callbacks.
+                                if (__snapshotObserver) __snapshotObserver.disconnect();
+                            });
+                            if (!document.hidden) __snapshotObserver.observe(document.documentElement, __observeOptions);
+                            __observingMutations = true;
+                        }
+                    } catch (_) {
+                        __snapshotObserver = null;
+                        // Fall back to periodic snapshots if observation is unavailable.
+                    }
                     const notifySnapshot = () => {
+                        if (!__snapshotEnabled || document.hidden) return;
                         if (!window.AndroidOffline || typeof AndroidOffline.onSnapshotCandidate !== 'function') return;
                         if (__snapshotTimer) window.clearTimeout(__snapshotTimer);
                         __snapshotTimer = window.setTimeout(() => {
+                            if (!__snapshotEnabled || document.hidden) return;
                             try {
+                                const url = window.location.href;
+                                if (__pendingNet === 0 && __observingMutations &&
+                                    !__snapshotDirty && url === __snapshotUrl) return;
                                 AndroidOffline.onSnapshotCandidate(JSON.stringify({
                                     pending: __pendingNet || 0,
-                                    html: document.documentElement.outerHTML,
-                                    url: window.location.href
+                                    // Native code ignores HTML while requests are pending.
+                                    html: __pendingNet > 0 ? "" : document.documentElement.outerHTML,
+                                    url: url
                                 }));
+                                if (__pendingNet === 0) {
+                                    __snapshotDirty = false;
+                                    __snapshotUrl = url;
+                                    if (__snapshotObserver && __snapshotEnabled && !document.hidden) {
+                                        try { __snapshotObserver.observe(document.documentElement, __observeOptions); }
+                                        catch (_) { __snapshotObserver = null; __observingMutations = false; }
+                                    }
+                                }
                             } catch (_) {}
                         }, 300);
+                    };
+                    const stopSnapshotInterval = () => {
+                        if (__snapshotInterval !== null) window.clearInterval(__snapshotInterval);
+                        __snapshotInterval = null;
+                    };
+                    const startSnapshotInterval = () => {
+                        if (__snapshotEnabled && !document.hidden && __snapshotInterval === null) {
+                            __snapshotInterval = window.setInterval(notifySnapshot, 4000);
+                        }
+                    };
+                    window.__tunnelviewSetSnapshotEnabled = (enabled) => {
+                        __snapshotEnabled = enabled;
+                        if (!enabled) {
+                            stopSnapshotInterval();
+                            if (__snapshotTimer) window.clearTimeout(__snapshotTimer);
+                            if (__snapshotObserver) __snapshotObserver.disconnect();
+                            return;
+                        }
+                        if (!document.hidden && __snapshotObserver) {
+                            try { __snapshotObserver.observe(document.documentElement, __observeOptions); }
+                            catch (_) { __snapshotObserver = null; __observingMutations = false; }
+                        }
+                        __snapshotDirty = true;
+                        startSnapshotInterval();
+                        notifySnapshot();
+                    };
+                    window.__tunnelviewRequestSnapshot = () => {
+                        __snapshotDirty = true;
+                        notifySnapshot();
                     };
                     const trackStart = () => { __pendingNet++; };
                     const trackEnd = () => {
@@ -3417,10 +3571,29 @@ class MainCoordinator(
 
                     window.setTimeout(notifySnapshot, 1200);
                     window.addEventListener('load', notifySnapshot, { once: false });
+                    document.addEventListener('visibilitychange', () => {
+                        try {
+                            if (__snapshotObserver) {
+                                if (document.hidden || !__snapshotEnabled) __snapshotObserver.disconnect();
+                                else __snapshotObserver.observe(document.documentElement, __observeOptions);
+                            }
+                        } catch (_) {
+                            __snapshotObserver = null;
+                            __observingMutations = false;
+                        }
+                        if (document.hidden) {
+                            stopSnapshotInterval();
+                            if (__snapshotTimer) window.clearTimeout(__snapshotTimer);
+                        } else if (__snapshotEnabled) {
+                            __snapshotDirty = true;
+                            startSnapshotInterval();
+                            notifySnapshot();
+                        }
+                    });
                     document.addEventListener('readystatechange', () => {
                         if (document.readyState === 'complete') notifySnapshot();
                     });
-                    window.setInterval(notifySnapshot, 4000);
+                    startSnapshotInterval();
 
                     const origFetch = window.fetch;
                     window.fetch = async function(input, init) {

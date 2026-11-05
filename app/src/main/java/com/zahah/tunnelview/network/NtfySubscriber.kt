@@ -36,6 +36,7 @@ class NtfySubscriber(
     private var reconnectJob: Job? = null
     private var webSocket: WebSocket? = null
     private var lastUrl: String? = null
+    private val reconnectBackoff = ReconnectBackoff()
 
     fun start(topicOrUrl: String) {
         val trimmed = topicOrUrl.trim()
@@ -61,6 +62,7 @@ class NtfySubscriber(
     fun stop() {
         reconnectJob?.cancel()
         reconnectJob = null
+        reconnectBackoff.reset()
         webSocket?.cancel()
         webSocket = null
         lastUrl = null
@@ -78,6 +80,7 @@ class NtfySubscriber(
         val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                reconnectBackoff.reset()
                 statusFlowInternal.tryEmit(NtfyStatus.Connected)
                 Log.d(TAG, "Connected to ntfy stream")
             }
@@ -119,8 +122,9 @@ class NtfySubscriber(
     private fun scheduleReconnect() {
         reconnectJob?.cancel()
         val url = lastUrl ?: return
+        val retryDelay = reconnectBackoff.next()
         reconnectJob = scope.launch {
-            delay(RECONNECT_DELAY_MS)
+            delay(retryDelay)
             if (!isActive) return@launch
             statusFlowInternal.tryEmit(NtfyStatus.Retrying)
             connect(url)
@@ -182,7 +186,6 @@ class NtfySubscriber(
 
     companion object {
         private const val TAG = "NtfySubscriber"
-        private const val RECONNECT_DELAY_MS = 5_000L
     }
 }
 

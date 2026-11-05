@@ -1,5 +1,7 @@
 package com.zahah.tunnelview.ssh
 
+import android.os.SystemClock
+
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import androidx.annotation.StringRes
@@ -246,6 +248,7 @@ class TunnelManager private constructor(context: Context) {
     private suspend fun connectionLoop() {
         connectivityObserver.start()
         var attempt = 0
+        val refreshGate = EndpointRefreshGate()
         var backoffMillis = INITIAL_BACKOFF_MS
         while (scope.isActive) {
             if (!started) {
@@ -255,13 +258,16 @@ class TunnelManager private constructor(context: Context) {
             val endpoint = _snapshot.value.endpoint
             if (endpoint == null) {
                 updateState(State.WaitingForEndpoint, attempt)
-                EndpointSyncWorker.enqueueImmediate(appContext)
+                if (refreshGate.shouldRefresh(SystemClock.elapsedRealtime())) {
+                    EndpointSyncWorker.enqueueImmediate(appContext)
+                }
                 maybeRefreshEndpointFromGit(endpoint)
                 delayWithWake(WAIT_ENDPOINT_BACKOFF_MS)
                 attempt = 0
                 backoffMillis = INITIAL_BACKOFF_MS
                 continue
             }
+            refreshGate.reset()
             val manualLocalOnly = endpoint.source == ProxyEndpointSource.MANUAL && prefs.sshHost.isNullOrBlank()
             if (manualLocalOnly) {
                 if (shouldBypassForLocal()) {
